@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from app.auth.schemas import UserRead, UserUpdate
+from app.auth.schemas import UserRead, UserSelfUpdate
 from app.auth.users import auth_backend, current_user_optional, fastapi_users, user_for_error_page
 from app.config import settings
 from app.database import async_session_maker, parse_row_id
@@ -309,7 +309,8 @@ app.include_router(
 # cleanup a user delete needs (a foreign-key 500 on PostgreSQL), the audit row, and keeping
 # `role` and `is_superuser` in step. Nothing used them; /admin/users is the way to manage
 # accounts.
-_users_router = fastapi_users.get_users_router(UserRead, UserUpdate)
+# `UserSelfUpdate` carries `current_password`, which a password or email change requires.
+_users_router = fastapi_users.get_users_router(UserRead, UserSelfUpdate)
 _users_router.routes = [route for route in _users_router.routes if "{id}" not in getattr(route, "path", "")]
 app.include_router(
     _users_router,

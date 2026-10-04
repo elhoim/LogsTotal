@@ -16,6 +16,7 @@ The `local` sentinel doubles as the test harness: host_copy_from maps it to `cp`
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -285,3 +286,149 @@ class TestTheCache:
         out = _sh("fleet_adopt", cwd=ws, install=tmp_path / "nothing-here", FLEET_FROM="local")
         assert out.returncode != 0
         assert "could not fetch the fleet record" in out.stdout + out.stderr
+
+
+class TestAnAdoptedRecordIsUntrusted:
+    """A record fetched with FLEET_FROM is data from another machine, and it reaches shell.
+
+    DEPLOY_REMOTE_DIR is pasted into heredoc scripts host_exec runs, and a `local` host runs
+    them with `bash -c` on the workstation — the machine holding deploy-envs/ and the SSH keys
+    to every host. So nothing from the record may choose `local`, name a host that was never
+    validated, or carry a remote_dir that is anything but a plain absolute path.
+
+    scp and ssh are stubs on PATH: the "control plane" is a crafted file, and nothing connects.
+    """
+
+    @staticmethod
+    def _stubs(tmp_path: Path, record: dict) -> dict[str, str]:
+        crafted = tmp_path / "crafted.json"
+        crafted.write_text(json.dumps(record), encoding="utf-8")
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        # scp hands back the crafted record whatever was asked for; the last argv is the dest.
+        (bin_dir / "scp").write_text(f'#!/bin/sh\nfor a; do d="$a"; done\ncp {crafted} "$d"\n', encoding="utf-8")
+        (bin_dir / "ssh").write_text(f'#!/bin/sh\necho "$@" >> {tmp_path / "ssh.log"}\nexit 1\n', encoding="utf-8")
+        for stub in ("scp", "ssh"):
+            (bin_dir / stub).chmod(0o755)
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("DEPLOY_", "FLEET_"))}
+        env.update(
+            {
+                "PATH": f"{bin_dir}:{env['PATH']}",
+                "HOME": str(ws),
+                "XDG_CACHE_HOME": str(ws / ".cache"),
+                "DEPLOY_ENV_FILE": "deploy.env",
+                "FLEET_FROM": "cp.example.com",
+            }
+        )
+        return env
+
+    @staticmethod
+    def _record(entries: list[dict], **options: str) -> dict:
+        return {"schema": 1, "control_plane": entries[0]["entry"], "hosts": entries, "options": options}
+
+    def _bash(self, tmp_path: Path, env: dict[str, str], body: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", "-c", f". {COMMON_SH}\n{body}\n"],
+            cwd=tmp_path / "ws",
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+    def test_a_remote_dir_payload_never_runs_on_the_workstation(self, tmp_path: Path):
+        """The published exploit: `hosts=local` plus a command substitution in remote_dir,
+        and a bare `FLEET_FROM=cp deploy:status` on a workstation with no deploy.env."""
+        marker = tmp_path / "PWNED"
+        record = self._record(
+            [{"entry": "cp.example.com", "address": ""}],
+            hosts="local",
+            remote_dir=f"/opt/logstotal$(touch {marker})",
+        )
+        env = self._stubs(tmp_path, record)
+        env["DEPLOY_ACTION"] = "status"
+        out = subprocess.run(
+            ["bash", str(REPO_ROOT / "scripts" / "deploy-multiserver.sh")],
+            cwd=tmp_path / "ws",
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert not marker.exists(), "the record's remote_dir ran as a command on this machine:\n" + out.stdout + out.stderr
+
+    def test_only_known_option_keys_are_read_back(self, tmp_path: Path):
+        """`hosts`, `clean` and `clean_confirm` are not options a record carries. Honouring
+        them lets a record choose DEPLOY_HOSTS=local, or DEPLOY_CLEAN=true on every host."""
+        record = self._record([{"entry": "cp.example.com"}], hosts="local", clean="true", clean_confirm="yes", domain="x.example.com")
+        out = self._bash(tmp_path, self._stubs(tmp_path, record), "fleet_adopt >/dev/null 2>&1\n_fleet_options")
+        assert out.stdout.split() == ["domain=x.example.com"], out.stdout + out.stderr
+
+    def test_a_known_key_cannot_smuggle_another_line(self, tmp_path: Path):
+        """fleet_env_default greps `^key=` over the options blob, so a newline inside an allowed
+        value would bring a filtered key back as a line of its own."""
+        record = self._record([{"entry": "cp.example.com"}], domain="x.example.com\nhosts=local\nremote_dir=/e$(id)")
+        out = self._bash(tmp_path, self._stubs(tmp_path, record), "fleet_adopt >/dev/null 2>&1\n_fleet_options")
+        assert out.stdout.split() == [], out.stdout + out.stderr
+
+    def test_a_remote_dir_that_is_not_a_plain_path_is_dropped(self, tmp_path: Path):
+        record = self._record([{"entry": "cp.example.com"}], remote_dir="/opt/x$(id)")
+        out = self._bash(tmp_path, self._stubs(tmp_path, record), "fleet_adopt >/dev/null 2>&1\nfleet_env_default DEPLOY_REMOTE_DIR")
+        assert out.stdout.strip() == "", out.stdout + out.stderr
+
+    @pytest.mark.parametrize("entry", ["local", " local", "w1;id", "w1 -oProxyCommand=id"])
+    def test_a_recorded_host_that_is_not_a_plain_host_is_refused(self, tmp_path: Path, entry: str):
+        record = self._record([{"entry": "cp.example.com"}, {"entry": entry, "address": "local"}])
+        out = self._bash(tmp_path, self._stubs(tmp_path, record), "fleet_adopt\necho ADOPTED")
+        assert out.returncode != 0 and "ADOPTED" not in out.stdout, out.stdout + out.stderr
+
+    def test_a_pulled_deploy_env_cannot_gain_lines(self, tmp_path: Path):
+        """fleet:pull writes deploy.env from the record; a newline in a value is a new key."""
+        path = tmp_path / "manifest.json"
+        record = self._record([{"entry": "cp.example.com"}], domain="x.example.com\nDEPLOY_CLEAN=true")
+        path.write_text(json.dumps(record), encoding="utf-8")
+        out = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "fleet_manifest.py"), "--file", str(path), "deploy-env"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert out.returncode != 0
+        assert "DEPLOY_CLEAN" not in out.stdout
+
+    @pytest.mark.parametrize(
+        "key", ["keep_releases", "vpn_port", "vpn_network", "cp_address", "cp_bind_address", "domain", "vpn_hub_endpoint", "proxy_tls", "basic_auth_user", "huey_workers"]
+    )
+    def test_every_imported_option_rejects_shell_payloads(self, tmp_path, key):
+        record = self._record([{"entry": "cp.example.com"}], **{key: "1;$(id)"})
+        out = self._bash(tmp_path, self._stubs(tmp_path, record), "fleet_adopt\necho ADOPTED")
+        assert out.returncode != 0 and "ADOPTED" not in out.stdout
+
+    def test_release_metadata_cannot_inject_deploy_env(self, tmp_path):
+        record = self._record([{"entry": "cp.example.com"}])
+        record["release"] = {"server": "https://example.com\nDEPLOY_HOSTS=local"}
+        out = self._bash(tmp_path, self._stubs(tmp_path, record), "fleet_adopt\necho ADOPTED")
+        assert out.returncode != 0 and "ADOPTED" not in out.stdout
+
+    @pytest.mark.parametrize("address,accepted", [("local", False), ("", True), ("cp.example.com", True)])
+    def test_persistent_pull_never_targets_the_workstation(self, tmp_path, address, accepted):
+        record = self._record([{"entry": "local", "address": address}], remote_dir="/opt/logstotal")
+        env = self._stubs(tmp_path, record)
+        env.pop("FLEET_FROM")
+        out = subprocess.run(
+            ["bash", str(REPO_ROOT / "scripts/fleet.sh"), "pull", "cp.example.com"],
+            cwd=tmp_path / "ws",
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=30,
+        )
+        target = tmp_path / "ws/deploy.env"
+        if accepted:
+            assert out.returncode == 0, out.stdout + out.stderr
+            assert "DEPLOY_HOSTS=cp.example.com" in target.read_text()
+        else:
+            assert out.returncode != 0, out.stdout + out.stderr
+            assert not target.exists()

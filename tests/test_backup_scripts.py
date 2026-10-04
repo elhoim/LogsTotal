@@ -352,3 +352,90 @@ def test_sqlite_backup_rejects_an_artifact_that_lost_schema_objects(tmp_path: Pa
     assert "refusing to record it" in output or "not recording it" in output, output
     assert not (tmp_path / "backups" / ".last-backup-path").exists()
     assert _row_count(db) == 3
+
+
+# ── the database password stays off argv ─────────────────────────────────────
+#
+# libpq tools do not scrub argv, so a password inside a connection URL sits in `ps` and
+# /proc/<pid>/cmdline for the whole dump. A command run through `docker compose exec` is
+# no better: the docker client's argv is on the host, and the process started in the
+# container is in the host's process table too.
+
+#: `%40` is `@`: the password libpq would decode from the URL, and must now get from PGPASSWORD.
+_PG_SECRET = "s3cr%40t-pw"
+_PG_SECRET_DECODED = "s3cr@t-pw"
+
+
+def _recording_stub(shim: Path, name: str, body: str = "") -> Path:
+    """An executable that appends its argv and PGPASSWORD to <name>.log, then runs `body`."""
+    shim.mkdir(exist_ok=True)
+    log = shim / f"{name}.log"
+    stub = shim / name
+    stub.write_text(f'#!/bin/sh\nprintf \'argv=%s\\n\' "$*" >> "{log}"\nprintf \'PGPASSWORD=%s\\n\' "${{PGPASSWORD:-}}" >> "{log}"\n{body}\n')
+    stub.chmod(0o755)
+    return log
+
+
+def _python3_recorder(shim: Path) -> Path:
+    """python3 that records its argv and then runs the real interpreter."""
+    real = shutil.which("python3")
+    assert real
+    return _recording_stub(shim, "python3", f'exec "{real}" "$@"')
+
+
+def test_postgres_backup_keeps_the_database_url_password_off_argv(tmp_path: Path):
+    shim = tmp_path / "shim"
+    pg_dump = _recording_stub(shim, "pg_dump", "echo '-- PostgreSQL database dump'")
+    python3 = _python3_recorder(shim)
+    url = f"postgresql+asyncpg://logstotal:{_PG_SECRET}@db.example:5432/logstotal"
+    result = _run("postgres", tmp_path, {"DATABASE_URL": url}, path_prefix=shim)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    argv_lines = [line for log in (pg_dump, python3) for line in log.read_text().splitlines() if line.startswith("argv=")]
+    leaked = [line for line in argv_lines if "s3cr" in line]
+    assert not leaked, f"database password on a command line: {leaked}"
+    log = pg_dump.read_text()
+    assert "argv=postgresql://logstotal@db.example:5432/logstotal\n" in log
+    assert f"PGPASSWORD={_PG_SECRET_DECODED}\n" in log
+
+
+def test_postgres_backup_through_the_container_keeps_the_password_off_argv(tmp_path: Path):
+    """`docker compose exec` gets `-e PGPASSWORD` by name; the value rides in its environment."""
+    (tmp_path / "docker-compose.yml").write_text("services:\n  postgres:\n    image: postgres:16-alpine\n")
+    shim = tmp_path / "shim"
+    docker = _recording_stub(
+        shim,
+        "docker",
+        'case "$*" in\n  *"ps --status running postgres"*) echo postgres ;;\n  *exec*) echo "-- PostgreSQL database dump" ;;\nesac',
+    )
+    python3 = _python3_recorder(shim)
+    url = f"postgresql://logstotal:{_PG_SECRET}@postgres/logstotal"
+    result = _run("postgres", tmp_path, {"DATABASE_URL": url}, path_prefix=shim)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "dumping via the running postgres container" in result.stdout
+
+    argv_lines = [line for log in (docker, python3) for line in log.read_text().splitlines() if line.startswith("argv=")]
+    leaked = [line for line in argv_lines if "s3cr" in line]
+    assert not leaked, f"database password on a command line: {leaked}"
+    lines = docker.read_text().splitlines()
+    exec_at = next(i for i, line in enumerate(lines) if line.startswith("argv=compose exec"))
+    assert lines[exec_at] == "argv=compose exec -T -e PGPASSWORD postgres pg_dump postgresql://logstotal@postgres/logstotal"
+    assert lines[exec_at + 1] == f"PGPASSWORD={_PG_SECRET_DECODED}"
+
+
+def test_postgres_restore_keeps_the_database_url_password_off_argv(tmp_path: Path):
+    dump = tmp_path / "dump.sql.gz"
+    dump.write_bytes(gzip.compress(b"-- PostgreSQL database dump\n"))
+    shim = _make_stub_dir(tmp_path, {"pgrep": 1, "task": 0})
+    psql = _recording_stub(shim, "psql", "cat > /dev/null")
+    python3 = _python3_recorder(shim)
+    url = f"postgresql+psycopg2://logstotal:{_PG_SECRET}@db.example/logstotal"
+    result = _run("restore-postgres", tmp_path, {"DATABASE_URL": url, "BACKUP_FILE": str(dump)}, path_prefix=shim)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    argv_lines = [line for log in (psql, python3) for line in log.read_text().splitlines() if line.startswith("argv=")]
+    leaked = [line for line in argv_lines if "s3cr" in line]
+    assert not leaked, f"database password on a command line: {leaked}"
+    log = psql.read_text()
+    assert "argv=-X -v ON_ERROR_STOP=1 --single-transaction postgresql://logstotal@db.example/logstotal\n" in log
+    assert f"PGPASSWORD={_PG_SECRET_DECODED}\n" in log

@@ -1311,6 +1311,9 @@ async def case_events_timeline(
     from app.routers.jobs import _events_timeline_payload
 
     await _load_case_or_404(db, case_id, user)
+    # The admin switch hides the panel from every viewer; the template only stops mounting it.
+    if not (await get_site_settings(db)).show_alert_timeline:
+        raise HTTPException(404)
 
     # Filtered in SQL, like the other case queries here. `visible_job_filter` is the
     # query-layer mirror of `can_view_job`, so the rule is identical — without hydrating

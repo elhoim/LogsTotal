@@ -16,9 +16,12 @@ value with the target dialect's type.
 
 Usage (see docs/runbooks/sqlite-to-postgres.md):
 
-    python3 scripts/sqlite_to_postgres.py \
-        --sqlite-url sqlite:///logstotal.db \
-        --postgres-url postgresql+psycopg2://logstotal:PASS@localhost:5432/logstotal
+    read -rs POSTGRES_TARGET_URL && export POSTGRES_TARGET_URL
+    python3 scripts/sqlite_to_postgres.py --sqlite-url sqlite:///logstotal.db
+
+The target URL comes from ``POSTGRES_TARGET_URL`` rather than the command line, where
+any local user could read its password from the process list. ``--postgres-url``
+overrides it, for a URL that carries no password.
 
 The target must already have the schema (run ``python3 -m app.migrations`` against it
 first) and must hold no rows: this refuses to merge into a populated database.
@@ -27,6 +30,7 @@ first) and must hold no rows: this refuses to merge into a populated database.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -132,8 +136,14 @@ def verify(sqlite_url: str, postgres_url: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Copy a LogsTotal SQLite database into an empty PostgreSQL one.")
     parser.add_argument("--sqlite-url", default="sqlite:///logstotal.db")
-    parser.add_argument("--postgres-url", required=True, help="e.g. postgresql+psycopg2://user:pass@host:5432/logstotal")
+    parser.add_argument(
+        "--postgres-url",
+        default=os.environ.get("POSTGRES_TARGET_URL"),
+        help="default: $POSTGRES_TARGET_URL. Prefer the variable: a password on the command line is visible to every local user.",
+    )
     args = parser.parse_args()
+    if not args.postgres_url:
+        parser.error("set POSTGRES_TARGET_URL=postgresql+psycopg2://user:password@host:5432/logstotal in the environment")
 
     print(f"Copying {args.sqlite_url} -> {args.postgres_url.rsplit('@', 1)[-1]}")
     copy_database(args.sqlite_url, args.postgres_url)

@@ -409,6 +409,24 @@ async def test_a_failed_runs_error_detail_is_not_shown_to_everyone(test_client, 
     assert "ollama.corp.internal" not in body
 
 
+@pytest.mark.parametrize(
+    ("viewer", "shown"),
+    [(None, False), ("basic@ai.example.com", False), ("owner@ai.example.com", False), ("admin@ai.example.com", True)],
+)
+async def test_the_requester_is_named_only_to_admins(test_client, async_db, base_rows, viewer, shown):
+    """The label falls back to the requester's email, which is a member's login name. The job
+    page names its submitter to admins only; an anonymous visitor must not harvest it here."""
+    job = base_rows["public_job"]
+    await _analysis(async_db, job.id, requested_by_user_id=base_rows["other"].id)
+
+    if viewer:
+        await _login(test_client, viewer)
+    body = (await test_client.get(f"/jobs/{job.id}/ai-analysis-partial")).text
+    assert "Nothing to see here." in body
+    assert ("other@ai.example.com" in body) is shown
+    assert ("requested by" in body) is shown
+
+
 # ── History ──────────────────────────────────────────────────────────────────
 
 

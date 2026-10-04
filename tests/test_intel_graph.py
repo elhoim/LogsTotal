@@ -546,6 +546,31 @@ class TestJobEdgeVisibility:
         assert await kinds(stranger) == [], "job edge leaked a private job's co-occurrence"
         assert await kinds(None) == []
 
+    async def test_near_clique_count_ignores_private_jobs_the_viewer_cannot_see(self, async_session):
+        """`stats.job_fanout_suppressed` is derived from jobs too. Counted over every job, a
+        member could put any two entities in a case and learn from the count that they
+        co-occur in someone else's wide private job — the inference the edges are filtered
+        to prevent."""
+        from app.intel.graph import MAX_JOB_FANOUT
+
+        owner_id = uuid.uuid4()
+        a, b = await _seed_private_pair(async_session, owner_id)
+        async_session.add_all(Entity(id=100 + i, value=f"10.1.{i // 256}.{i % 256}", entity_type="ip_address", job_count=1) for i in range(MAX_JOB_FANOUT))
+        async_session.add_all(EntityJobLink(entity_id=100 + i, job_id=1) for i in range(MAX_JOB_FANOUT))
+        await async_session.commit()
+
+        owner = SimpleNamespace(id=owner_id, is_superuser=False)
+        stranger = SimpleNamespace(id=uuid.uuid4(), is_superuser=False)
+
+        async def suppressed(viewer):
+            case = await build_case_graph(async_session, [a.id, b.id], viewer=viewer, job_edges=True)
+            entity = await build_entity_graph(async_session, a.id, viewer=viewer)
+            return case["stats"]["job_fanout_suppressed"], entity["stats"]["job_fanout_suppressed"]
+
+        assert await suppressed(owner) == (1, 1)
+        assert await suppressed(stranger) == (0, 0), "near-clique count leaked a private job"
+        assert await suppressed(None) == (0, 0)
+
     async def test_neighbors_of_excludes_private_jobs(self, async_session):
         owner_id = uuid.uuid4()
         a, b = await _seed_private_pair(async_session, owner_id)

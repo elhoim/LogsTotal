@@ -200,7 +200,7 @@
   {% endif %}
 
   <!-- Card 4: Threat Detection -->
-  {% if analytics.threat_detection and analytics.threat_detection.total_indicators > 0 and (not site_settings or site_settings.show_threat_detection) %}
+  {% if analytics.threat_detection and (analytics.threat_detection.total_indicators > 0 or analytics.threat_detection.incomplete) and (not site_settings or site_settings.show_threat_detection) %}
   {% set td = analytics.threat_detection %}
   <div class="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
     <h3 class="text-sm font-medium text-gray-400 mb-4 flex items-center flex-wrap gap-1">
@@ -216,8 +216,9 @@
         · {{ td.total_indicators }} indicator{{ 's' if td.total_indicators != 1 else '' }} across {{ td.total_categories }} area{{ 's' if td.total_categories != 1 else '' }}
       </span>
     </h3>
-
-
+    {% if td.incomplete %}
+    <p class="text-sm text-amber-300 mb-4" role="status">Threat detection is incomplete: some regular expression checks exceeded the processing time limit. Other checks continued; review the original events for missed indicators.</p>
+    {% endif %}
     <div x-data="{ view: 'all', sevFilter: '' }">
       <div class="flex gap-1 flex-wrap overflow-x-auto border-b border-gray-800 pb-3 mb-4 scrollbar-thin">
         <button @click="view = 'all'; sevFilter = ''" class="text-xs px-2.5 py-1 rounded border transition flex items-center gap-1.5"

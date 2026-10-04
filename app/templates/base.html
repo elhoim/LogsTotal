@@ -60,6 +60,9 @@
      Page-local factories declared in inline <script> blocks are safe either way: inline
      scripts execute during parsing, before every deferred script. #}
   <script defer src="/static/app.js?v={{ asset_version('app/static/app.js') }}"></script>
+  {% if user %}
+  <script defer src="/static/account-menu.js?v={{ asset_version('app/static/account-menu.js') }}"></script>
+  {% endif %}
   {# Renders ```mermaid blocks in analyst prose (AI analyses, case notes, comments).
      `data-mermaid-src` is how the 3.5 MB vendor bundle gets its versioned URL without the
      script guessing at one — it is fetched lazily, only when a diagram is actually present,
@@ -818,12 +821,7 @@
         </div>
         {% endif %}
         {% if user %}
-          <span class="text-sm text-gray-500 truncate max-w-[200px]">{{ user.email }}</span>
-          <form method="POST" action="/auth/cookie/logout" class="inline"
-                hx-post="/auth/cookie/logout"
-                hx-on::after-request="window.location.href='/'">
-            <button class="lt-btn lt-btn--ghost lt-btn--nav hover:text-red-400">Logout</button>
-          </form>
+          {% include "partials/_account_menu.html" %}
         {% else %}
           <a href="/auth/login" class="text-sm text-gray-400 hover:text-white transition">Login</a>
         {% endif %}

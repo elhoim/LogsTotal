@@ -36,3 +36,15 @@ class UserUpdate(schemas.BaseUserUpdate):
     """
 
     display_name: str | None = Field(default=None, max_length=DISPLAY_NAME_MAX)
+
+
+class UserSelfUpdate(UserUpdate):
+    """Body of the self-service ``PATCH /api/users/me``.
+
+    ``current_password`` is required to change ``password`` or ``email`` (the login
+    identifier): ``UserManager.update`` checks it, so a borrowed or stolen session cannot
+    become a permanent takeover. ``exclude=True`` keeps it out of the update dict. Admin
+    paths use ``UserUpdate`` and are unaffected.
+    """
+
+    current_password: str | None = Field(default=None, exclude=True)

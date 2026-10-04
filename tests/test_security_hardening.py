@@ -298,6 +298,55 @@ async def test_patch_me_refuses_a_display_name_longer_than_the_column(test_clien
     assert stored is None
 
 
+# A borrowed or stolen session (an unlocked workstation, a lifted cookie) must end when the
+# JWT does. Setting a new password or a new email — the login identifier — would turn it
+# into a permanent takeover and lock the owner out, so both need the current password.
+
+
+async def _login_status(client, *, email: str, password: str) -> int:
+    client.cookies.clear()
+    resp = await client.post("/auth/cookie/login", data={"username": email, "password": password}, follow_redirects=False)
+    return resp.status_code
+
+
+@pytest.mark.parametrize("current", [None, "wrong-password"])
+async def test_patch_me_refuses_a_password_change_without_the_current_password(test_client, async_db, current):
+    await _create_user(async_db, email="takeover@test.example.com", password="pass123456", role="user")
+    await _login(test_client, email="takeover@test.example.com", password="pass123456")
+
+    body = {"password": "attacker-chosen-1"} | ({"current_password": current} if current else {})
+    resp = await test_client.patch("/api/users/me", json=body)
+    assert resp.status_code == 400, resp.text
+
+    assert await _login_status(test_client, email="takeover@test.example.com", password="pass123456") == 204
+    assert await _login_status(test_client, email="takeover@test.example.com", password="attacker-chosen-1") == 400
+
+
+@pytest.mark.parametrize("current", [None, "wrong-password"])
+async def test_patch_me_refuses_an_email_change_without_the_current_password(test_client, async_db, current):
+    await _create_user(async_db, email="owner@test.example.com", password="pass123456", role="user")
+    await _login(test_client, email="owner@test.example.com", password="pass123456")
+
+    body = {"email": "attacker@evil.example.com"} | ({"current_password": current} if current else {})
+    resp = await test_client.patch("/api/users/me", json=body)
+    assert resp.status_code == 400, resp.text
+
+    assert await async_db.scalar(select(User).where(User.email == "attacker@evil.example.com")) is None
+    assert await _login_status(test_client, email="owner@test.example.com", password="pass123456") == 204
+
+
+async def test_patch_me_changes_the_password_with_the_current_password(test_client, async_db):
+    await _create_user(async_db, email="rotate@test.example.com", password="pass123456", role="user")
+    await _login(test_client, email="rotate@test.example.com", password="pass123456")
+
+    resp = await test_client.patch("/api/users/me", json={"password": "a-new-pass-99", "current_password": "pass123456"})
+    assert resp.status_code == 200, resp.text
+    assert "current_password" not in resp.json()
+
+    assert await _login_status(test_client, email="rotate@test.example.com", password="a-new-pass-99") == 204
+    assert await _login_status(test_client, email="rotate@test.example.com", password="pass123456") == 400
+
+
 # ── XSS regression tests ─────────────────────────────────────────────────────
 
 

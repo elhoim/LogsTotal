@@ -40,7 +40,9 @@ def test_postgres_backup_restores_rows_into_empty_database(tmp_path):
 
     try:
         run(docker, "compose", "up", "-d", "--wait")
-        run(docker, "compose", "exec", "-T", "postgres", "sh", "-c", "until pg_isready -U logstotal -q; do sleep 1; done", timeout=45)
+        # The image starts a socket-only initialization server, then restarts it.
+        # Wait for TCP so readiness cannot refer to that temporary server.
+        run(docker, "compose", "exec", "-T", "postgres", "sh", "-c", "until pg_isready -h 127.0.0.1 -U logstotal -q; do sleep 1; done", timeout=45)
         sql("CREATE TABLE recovery_marker(value text); INSERT INTO recovery_marker VALUES ('recovered')")
         run("bash", str(ROOT / "scripts/backup.sh"), "postgres")
         artifact = next((tmp_path / "backups").glob("*.sql.gz"))

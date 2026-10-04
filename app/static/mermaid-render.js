@@ -89,8 +89,12 @@
           // because it is what the edge and cluster label paths still read.
           htmlLabels: false,
           flowchart: { curve: 'basis', padding: 16, htmlLabels: false },
-          // Replaces mermaid's default secure list, so all of it is repeated here. `theme`
-          // is the addition; everything else is what the default already protected.
+          // Replaces mermaid's default secure list, so all of it is repeated here. From
+          // `theme` on are the additions; everything before is what the default protected.
+          // `themeCSS` goes into the diagram's <style>, and its `&` selector is the <svg>
+          // itself, so a directive could pin the diagram over the whole page; the font and
+          // theme variables feed the same stylesheet. `htmlLabels` is note 2's hardening,
+          // which a directive could otherwise switch back on.
           secure: [
             'secure',
             'securityLevel',
@@ -98,7 +102,13 @@
             'maxTextSize',
             'suppressErrorRendering',
             'maxEdges',
-            'theme'
+            'theme',
+            'themeCSS',
+            'themeVariables',
+            'fontFamily',
+            'altFontFamily',
+            'htmlLabels',
+            'dompurifyConfig'
           ],
           // Suppresses mermaid's own error diagram; we render our own fallback, which keeps
           // the source readable instead of replacing it with a red cross.

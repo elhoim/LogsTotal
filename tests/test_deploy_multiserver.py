@@ -615,6 +615,8 @@ def _worker_shim(tmp_path: Path) -> Path:
     d.mkdir()
     (d / "ssh").write_text(
         "#!/bin/bash\n"
+        # The staging directory the deploy asks the host to mktemp.
+        "case \"$*\" in *'mktemp -d'*) echo /tmp/logstotal-deploy.shim00 ; exit 0 ;; esac\n"
         "body=$(cat)\n"
         'case "$body" in\n'
         "  *'docker-compose.worker.yml ps --status running'*) exit 1 ;;\n"
@@ -699,7 +701,9 @@ def test_a_confirmed_worker_says_nothing_about_confirmation(tmp_path: Path):
     """The control: when the worker does come up, the closing line is unqualified."""
     shim = tmp_path / "shim"
     shim.mkdir()
-    (shim / "ssh").write_text("#!/bin/bash\nbody=$(cat)\ncase \"$body\" in\n  *'/health'*) printf '200' ; exit 0 ;;\n  *main_running*) exit 1 ;;\nesac\nexit 0\n")
+    (shim / "ssh").write_text(
+        "#!/bin/bash\ncase \"$*\" in *'mktemp -d'*) echo /tmp/logstotal-deploy.shim00 ; exit 0 ;; esac\nbody=$(cat)\ncase \"$body\" in\n  *'/health'*) printf '200' ; exit 0 ;;\n  *main_running*) exit 1 ;;\nesac\nexit 0\n"
+    )
     (shim / "scp").write_text("#!/bin/bash\nexit 0\n")
     for name in ("ssh", "scp"):
         (shim / name).chmod(0o755)
@@ -842,6 +846,8 @@ def _start_failing_deploy(tmp_path: Path, extra: dict[str, str] | None = None):
     d.mkdir()
     (d / "ssh").write_text(
         "#!/bin/bash\n"
+        # The staging directory the deploy asks the host to mktemp.
+        "case \"$*\" in *'mktemp -d'*) echo /tmp/logstotal-deploy.shim00 ; exit 0 ;; esac\n"
         "body=$(cat)\n"
         'case "$body" in\n'
         "  *'docker-compose.worker.yml ps --status running'*) exit 1 ;;\n"
@@ -999,3 +1005,138 @@ def test_the_first_error_a_new_operator_sees_is_a_sentence(tmp_path: Path):
     assert "unbound variable" not in both, both
     assert "DEPLOY_HOSTS" in both
     assert "deploy.env" in both
+
+
+# ── The bundle marker is data, never code ────────────────────────────────────
+#
+# data/.bundle-images sits in ./data, which docker-compose.yml bind-mounts read-write into
+# the web container and docker-entrypoint.sh chowns to appuser. It was `.`-sourced by the
+# host shell — as the SSH user, root by default — so a file write inside the web container
+# became a command run as root on the host at the next start.
+
+_PLANTED_MARKER = 'tag=1.2.3; touch "{pwned}"\n'
+
+
+def _local_start(tmp_path: Path, marker: str) -> tuple[list[str], subprocess.CompletedProcess[str]]:
+    """Run the real remote_start against DEPLOY_HOSTS=local; return what ./logstotal saw."""
+    install = tmp_path / "install"
+    (install / "data").mkdir(parents=True)
+    (install / "data" / ".bundle-images").write_text(marker)
+    seen = tmp_path / "seen"
+    lt = install / "logstotal"
+    lt.write_text(f'#!/bin/bash\nprintf "%s %s %s\\n" "$1" "$LOGSTOTAL_NO_BUILD" "$LOGSTOTAL_IMAGE_TAG" > "{seen}"\n')
+    lt.chmod(0o755)
+    # Nothing is running, so the health gate after the start answers at once.
+    bins = tmp_path / "bin"
+    bins.mkdir()
+    for name, body in (("curl", "printf '000'"), ("docker", "exit 1")):
+        (bins / name).write_text(f"#!/bin/bash\n{body}\n")
+        (bins / name).chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("DEPLOY_", "LOGSTOTAL_"))}
+    env.update(
+        {
+            "PATH": f"{bins}{os.pathsep}{os.environ['PATH']}",
+            "DEPLOY_ENV_FILE": str(tmp_path / "deploy.env.absent"),
+            "DEPLOY_HOSTS": "local",
+            "DEPLOY_ACTION": "start-only",
+            "DEPLOY_REMOTE_DIR": str(install),
+            "DEPLOY_HEALTH_ATTEMPTS": "1",
+            "DEPLOY_HEALTH_DELAY": "0",
+        }
+    )
+    result = subprocess.run(["bash", str(SCRIPT)], cwd=tmp_path, env=env, capture_output=True, text=True, check=False, stdin=subprocess.DEVNULL)
+    return (seen.read_text().split() if seen.exists() else []), result
+
+
+def test_remote_start_does_not_run_a_planted_bundle_marker(tmp_path: Path):
+    pwned = tmp_path / "pwned"
+    seen, result = _local_start(tmp_path, _PLANTED_MARKER.format(pwned=pwned))
+    # The real remote_start ran on this host and reached the start task…
+    assert seen[:2] == ["docker:up", "true"], result.stdout + result.stderr
+    # …without executing what the container wrote, and without taking a tag from it.
+    assert not pwned.exists(), "the host shell ran a command planted in data/.bundle-images"
+    assert seen[2:] != ["1.2.3"]
+
+
+def test_a_well_formed_bundle_marker_still_selects_its_tag(tmp_path: Path):
+    seen, result = _local_start(tmp_path, "tag=1.2.3\n")
+    assert seen == ["docker:up", "true", "1.2.3"], result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("task", ["docker:up", "docker:worker-up"])
+@pytest.mark.parametrize("marker", ["planted", "valid"])
+def test_ops_start_tasks_parse_the_bundle_marker_as_data(tmp_path: Path, task: str, marker: str):
+    """`./logstotal docker:up` and `docker:worker-up` read the same marker on the host."""
+    import yaml
+
+    ops = yaml.safe_load((REPO_ROOT / "taskfiles" / "ops.yml").read_text(encoding="utf-8"))
+    script = next(c for c in ops["tasks"][task]["cmds"] if isinstance(c, str) and ".bundle-images" in c)
+    (tmp_path / "data").mkdir()
+    pwned = tmp_path / "pwned"
+    (tmp_path / "data" / ".bundle-images").write_text(_PLANTED_MARKER.format(pwned=pwned) if marker == "planted" else "tag=1.2.3\n")
+    bins = tmp_path / "bin"
+    bins.mkdir()
+    seen = tmp_path / "seen"
+    (bins / "docker").write_text(f'#!/bin/bash\nprintf "%s\\n" "$LOGSTOTAL_IMAGE_TAG" >> "{seen}"\n')
+    (bins / "docker").chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("LOGSTOTAL_")}
+    env["PATH"] = f"{bins}{os.pathsep}{env['PATH']}"
+    result = subprocess.run(["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not pwned.exists(), "the host shell ran a command planted in data/.bundle-images"
+    assert set(seen.read_text().split()) == ({"1.2.3"} if marker == "valid" else set())
+
+
+# ── The release is never staged under a name someone else can create first ───
+
+
+def test_the_package_is_not_staged_through_a_planted_tmp_file(tmp_path: Path):
+    """The upload used to land at /tmp/logstotal-deploy-<package>, and the package name
+    is the public release version. A local user on the target creates that file first;
+    on a `local` control plane `cp` writes the release into their inode, and the next
+    step runs `7z x` on it — a file they can rewrite before the deploying account
+    extracts and installs it. Real `local` run: docker, rsync and 7z are shims, and 7z
+    fails, so the deploy stops right after naming the archive it would extract."""
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    (shim / "docker").write_text("#!/bin/sh\nexit 1\n")
+    (shim / "rsync").write_text("#!/bin/sh\nexit 0\n")
+    (shim / "7z").write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$SEVENZ_ARGV"\nexit 1\n')
+    for name in ("docker", "rsync", "7z"):
+        (shim / name).chmod(0o755)
+    pkg = tmp_path / f"logstotal-9.9.9-{os.getpid()}{os.urandom(3).hex()}.7z"
+    pkg.write_bytes(b"release bytes\n")
+    argv_log = tmp_path / "7z-argv"
+    env = {k: v for k, v in os.environ.items() if not k.startswith("DEPLOY_")}
+    env.update(
+        {
+            "PATH": f"{shim}{os.pathsep}{env['PATH']}",
+            "TMPDIR": str(tmp_path),
+            "SEVENZ_ARGV": str(argv_log),
+            "DEPLOY_ENV_FILE": str(tmp_path / "deploy.env.absent"),
+            "DEPLOY_HOSTS": "local",
+            "DEPLOY_REMOTE_DIR": str(tmp_path / "opt"),
+            "DEPLOY_PACKAGE": str(pkg),
+            "DEPLOY_STOP": "false",
+            "DEPLOY_START": "false",
+        }
+    )
+    planted = Path(f"/tmp/logstotal-deploy-{pkg.name}")
+    planted.touch(mode=0o666)
+    try:
+        subprocess.run(
+            ["bash", str(SCRIPT)],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+        received = planted.read_bytes()
+    finally:
+        planted.unlink(missing_ok=True)
+    extracted = argv_log.read_text(encoding="utf-8").splitlines()
+    assert received == b"", "the release was written into a file another user planted"
+    assert str(planted) not in extracted, f"7z extracted the planted path: {extracted}"
+    assert any(a.startswith(str(tmp_path)) and a.endswith("/package.7z") for a in extracted), extracted

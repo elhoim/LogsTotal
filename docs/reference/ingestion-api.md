@@ -121,8 +121,9 @@ resources. Receipts are deleted with their owning account.
 
 - `GET /api/v1/workflows` returns `{"workflows":[{"id":1,"name":"…","log_types":["evtx"],"is_default":true}]}`.
 - `GET /api/v1/jobs?ids=123,124` accepts at most 50 IDs and returns `jobs` with `job_id`,
-  `status`, `total_findings`, `error`, and `job_url`. `unavailable_ids` covers missing and
-  inaccessible jobs identically. Poll about every three seconds while active, less
+  `status`, `total_findings`, `error`, and `job_url`. As on the job page, a failed job's
+  `error` detail is shown to administrators only; others get a generic message.
+  `unavailable_ids` covers missing and inaccessible jobs identically. Poll about every three seconds while active, less
   often in background tabs, and stop at `completed`, `partial`, `failed`, or `cancelled`.
 - `POST /api/v1/cases` accepts `{"name":"Investigation","is_shared":false}` and returns
   `201` with `case_id` and `case_url`. An optional idempotency key makes creation safe to

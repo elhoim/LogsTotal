@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import shutil
+import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -102,3 +106,73 @@ def test_write_env_rerun_is_noop_for_real_values(gen_secrets, tmp_path, monkeypa
 def test_write_env_missing_env_file_errors(gen_secrets, tmp_path, monkeypatch):
     monkeypatch.setattr(gen_secrets, "PROJECT_ROOT", tmp_path)
     assert gen_secrets.write_env(gen_secrets.generate(), force=False) == 1
+
+
+# ── .env holds every secret: it must not be readable by other local users ────
+
+
+@pytest.fixture()
+def umask_022():
+    old = os.umask(0o022)
+    try:
+        yield
+    finally:
+        os.umask(old)
+
+
+def test_write_env_leaves_a_world_readable_env_owner_only(gen_secrets, tmp_path, monkeypatch, umask_022):
+    """`cp .env.example .env` makes a 0644 file under the usual umask; the secrets written
+    into it must not inherit that mode."""
+    env = tmp_path / ".env"
+    env.write_text("SECRET_KEY=change-me-in-production\nADMIN_PASSWORD=changeme123\n", encoding="utf-8")
+    env.chmod(0o644)
+    monkeypatch.setattr(gen_secrets, "PROJECT_ROOT", tmp_path)
+
+    assert gen_secrets.write_env(gen_secrets.generate(), force=False) == 0
+    assert stat.S_IMODE(env.stat().st_mode) == 0o600
+
+
+@pytest.mark.skipif(shutil.which("bash") is None or shutil.which("python3") is None, reason="bash/python3 not available")
+def test_env_bootstrap_creates_an_owner_only_env(tmp_path, umask_022):
+    """The real `task setup` path: env-bootstrap.sh copies the template, then fills it."""
+    repo = SCRIPT.parent.parent
+    shutil.copytree(repo / "scripts", tmp_path / "scripts")
+    shutil.copy(repo / ".env.example", tmp_path / ".env.example")
+    result = subprocess.run(["bash", "scripts/env-bootstrap.sh"], cwd=tmp_path, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    assert "ADMIN LOGIN" in result.stdout  # the secrets really were written
+    assert stat.S_IMODE((tmp_path / ".env").stat().st_mode) == 0o600
+
+
+def test_private_replacement_does_not_feed_open_readers(gen_secrets, tmp_path):
+    path = tmp_path / "env"
+    path.write_text("old")
+    path.chmod(0o644)
+    link = tmp_path / "hardlink"
+    os.link(path, link)
+    with path.open() as reader:
+        gen_secrets.write_private(path, "new-secret")
+        assert reader.read() == "old"
+    assert link.read_text() == "old"
+    assert path.read_text() == "new-secret"
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_private_replacement_refuses_symlinks_and_preserves_on_error(gen_secrets, tmp_path, monkeypatch):
+    path = tmp_path / "env"
+    path.write_text("original")
+    link = tmp_path / "symlink"
+    link.symlink_to(path)
+    with pytest.raises(ValueError):
+        gen_secrets.write_private(link, "new-secret")
+    assert path.read_text() == "original"
+
+    def fail(*args):
+        raise OSError("injected failure")
+
+    monkeypatch.setattr(gen_secrets.os, "replace", fail)
+    with pytest.raises(OSError):
+        gen_secrets.write_private(path, "new-secret")
+    assert path.read_text() == "original"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["env", "symlink"]

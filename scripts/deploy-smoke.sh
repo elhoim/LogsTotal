@@ -14,9 +14,13 @@
 #                  proxy serves plain HTTP.
 #
 # PROXY_TLS / DEPLOY_PROXY_TLS (default acme) decide that scheme and whether the
-# certificate is verified. `internal` and `custom` serve one no public CA vouches for, so
-# the probes add -k: this is a reachability check against a host we just deployed, and
-# refusing to look would report 000 for every internal deployment — indistinguishable from dead.
+# certificate is verified. `internal` and `custom` may serve one this machine does not trust.
+# SMOKE_CACERT (Caddy's root.crt for `internal`, the issuing CA for `custom`) verifies against
+# it. Without one, a certificate this machine cannot verify is looked past with -k — refusing
+# to look would report 000 for every internal deployment, indistinguishable from dead — but
+# the basic-auth credentials are then withheld: -k accepts any certificate, so anything on the
+# path could collect them. Behind basic auth that run reports "could not verify" (exit 2
+# under DEPLOY_SMOKE_STRICT), which both callers already handle.
 #   3. DEPLOY_HOSTS  First host — derives http://<host>:8000 (a user@ prefix is stripped;
 #                    the `local` sentinel resolves to localhost).
 #   4. http://localhost:8000  Fallback for local dev.
@@ -139,14 +143,8 @@ if [ -n "${BASIC_AUTH_USER:-}" ] && [ -n "${BASIC_AUTH_PASS:-}" ]; then
   CURL_AUTH=(-u "${BASIC_AUTH_USER}:${BASIC_AUTH_PASS}")
 fi
 
-# `-k` for the two modes that serve a certificate no CA vouches for. This is a reachability
-# probe against a host we just deployed, not a trust decision — and refusing to look would
-# leave "is it up?" unanswerable on every internal deployment. `acme` keeps full
-# verification, because there a bad certificate is a real finding.
+SMOKE_CACERT="${SMOKE_CACERT:-$(deploy_env_default SMOKE_CACERT)}"
 CURL_TLS=()
-case "$PROXY_TLS" in
-  internal | custom) CURL_TLS=(-k) ;;
-esac
 
 if [ -n "${SMOKE_URL:-}" ]; then
   BASE_URL="$SMOKE_URL"
@@ -210,6 +208,27 @@ if truthy "${DEPLOY_DRY_RUN:-false}"; then
   printf '%s(dry-run: would probe /health, /, /auth/login — making no requests)%s\n' "$C_CYAN" "$C_OFF"
   exit 0
 fi
+
+# How to treat the certificate of the two modes that may serve one no public CA vouches for.
+# `acme` keeps curl's default verification, because there a bad certificate is a real
+# finding. For the other two: SMOKE_CACERT if given; else a certificate this machine already
+# trusts (a CA-issued `custom` one, or an installed Caddy root) keeps full verification;
+# else `-k` for reachability — and never together with the credentials. Decided before the
+# first probe, by a request of its own that carries no credentials.
+CREDS_WITHHELD=no
+case "$PROXY_TLS:$BASE_URL" in
+  internal:https://* | custom:https://*)
+    if [ -n "${SMOKE_CACERT:-}" ]; then
+      CURL_TLS=(--cacert "$SMOKE_CACERT")
+    elif ! curl -s -o /dev/null --max-time 10 "$BASE_URL/health" 2>/dev/null; then
+      CURL_TLS=(-k)
+      if [ ${#CURL_AUTH[@]} -gt 0 ]; then
+        CURL_AUTH=()
+        CREDS_WITHHELD=yes
+      fi
+    fi
+    ;;
+esac
 
 # Probe one URL. Sets PROBE_CODE (three digits, "000" when nothing answered) and PROBE_RC
 # (curl's own exit status).
@@ -315,7 +334,15 @@ fi
 # case when the fleet was deployed with one passed for that run alone.
 if [ "$AUTH_WALL" = "yes" ]; then
   echo ""
-  if [ ${#CURL_AUTH[@]} -eq 0 ]; then
+  if [ "$CREDS_WITHHELD" = "yes" ]; then
+    warn "the deployment is up and behind HTTP basic auth, and its certificate could not be verified."
+    echo "       The credentials were withheld rather than sent over a connection anything on the"
+    echo "       path could have answered, so nothing below this line was measured. Point"
+    echo "       SMOKE_CACERT at the CA that issued it — for PROXY_TLS=internal, Caddy's root:"
+    echo ""
+    echo "         docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./logstotal-root.crt   # on the control plane"
+    echo "         SMOKE_CACERT=./logstotal-root.crt ./logstotal deploy:smoke"
+  elif [ ${#CURL_AUTH[@]} -eq 0 ]; then
     warn "the deployment is up and behind HTTP basic auth, and no credentials were supplied."
     echo "       Everything below this line could not be measured — not a single check reached"
     echo "       the application. Re-run with the password, or set it in deploy.env:"

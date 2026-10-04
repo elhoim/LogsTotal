@@ -89,7 +89,9 @@ docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./logstotal-r
 ```
 
 and install `logstotal-root.crt` as a trusted root on those machines. Until you do, every
-browser shows a certificate warning. That is why `ENABLE_HSTS` stays `false` in this mode:
+browser shows a certificate warning. On the machine that runs `./logstotal deploy:smoke`,
+either install it too or pass `SMOKE_CACERT=./logstotal-root.crt`: without either, the smoke
+check will not send basic-auth credentials over the unverified connection. That is why `ENABLE_HSTS` stays `false` in this mode:
 HSTS turns a warning you can click through into a page that cannot be opened at all.
 
 ## HTTP basic auth

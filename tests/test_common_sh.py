@@ -455,6 +455,46 @@ class TestSshOptions:
             resolved = paths[0].replace("%C", "0" * 40)
             assert len(resolved) < 104, f"ControlPath would overrun the socket limit: {resolved}"
 
+    @staticmethod
+    def _opts_for_uid(tmp_path: Path, uid: str) -> subprocess.CompletedProcess:
+        """build_ssh_opts with `id -u` answering UID, so the test owns a fresh
+        /tmp/.lt-ssh-<uid> instead of racing the real operator's."""
+        shim = tmp_path / "idshim"
+        shim.mkdir(exist_ok=True)
+        (shim / "id").write_text(f'#!/bin/sh\n[ "$1" = -u ] && {{ echo {uid}; exit 0; }}\nexec /usr/bin/id "$@"\n')
+        (shim / "id").chmod(0o755)
+        return _run(f'export PATH="{shim}:$PATH"; build_ssh_opts; printf "%s\\n" "${{SSH_OPTS[@]}}"', tmp_path)
+
+    def test_a_planted_control_directory_is_not_trusted(self, tmp_path: Path):
+        """/tmp/.lt-ssh-<uid> is a name any local user can create first. `mkdir -p` then
+        succeeds on their directory, the `chmod 700` fails, and every ssh/scp of the
+        deploy — the .env push, the basic-auth password — goes through a ControlPath
+        they control. Planted here as a symlink to a directory the operator cannot
+        chmod (the test cannot manufacture a directory owned by another uid; the
+        ownership check covers that case the same way)."""
+        uid = f"8{os.getpid()}{os.urandom(3).hex()}"
+        cm_dir = Path(f"/tmp/.lt-ssh-{uid}")
+        cm_dir.symlink_to("/var/tmp")
+        try:
+            res = self._opts_for_uid(tmp_path, uid)
+        finally:
+            cm_dir.unlink()
+        assert res.returncode == 0, res.stderr
+        assert f"ControlPath={cm_dir}/" not in res.stdout, "a planted control directory was trusted"
+        assert "BatchMode=yes" in res.stdout, "refusing to multiplex must not refuse to connect"
+
+    def test_a_fresh_control_directory_is_private_to_the_operator(self, tmp_path: Path):
+        uid = f"8{os.getpid()}{os.urandom(3).hex()}"
+        cm_dir = Path(f"/tmp/.lt-ssh-{uid}")
+        try:
+            res = self._opts_for_uid(tmp_path, uid)
+            assert f"ControlPath={cm_dir}/%C" in res.stdout, res.stdout + res.stderr
+            assert cm_dir.stat().st_mode & 0o777 == 0o700
+            assert cm_dir.stat().st_uid == os.geteuid()
+        finally:
+            if cm_dir.is_dir() and not cm_dir.is_symlink():
+                cm_dir.rmdir()
+
 
 class TestHostNumber:
     def test_an_unmeasurable_value_is_a_question_mark_not_an_empty_string(self, tmp_path: Path):

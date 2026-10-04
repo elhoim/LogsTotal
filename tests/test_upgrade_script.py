@@ -84,7 +84,9 @@ def _make_stub_dir(tmp_path: Path, names: tuple[str, ...] = _STUB_CMDS) -> Path:
     for name in names:
         p = d / name
         if name == "ssh":
-            p.write_text('#!/bin/sh\nbody=$(cat 2>/dev/null || true)\ncase "$body" in *health*) printf 200; exit 0 ;; esac\necho "STUB ssh $*"\nexit 0\n')
+            p.write_text(
+                '#!/bin/sh\ncase "$*" in *"mktemp -d"*"logstotal-env."*) echo /tmp/logstotal-env.shim00; exit 0 ;; *"mktemp -d"*) echo /tmp/logstotal-deploy.shim00; exit 0 ;; esac\nbody=$(cat 2>/dev/null || true)\ncase "$body" in *health*) printf 200; exit 0 ;; esac\necho "STUB ssh $*"\nexit 0\n'
+            )
         else:
             p.write_text(f'#!/bin/sh\necho "STUB {name} $*"\nexit 0\n')
         p.chmod(0o755)

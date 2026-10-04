@@ -435,3 +435,32 @@ class TestTheShellShim:
         invited to believe is checked."""
         extra = [k for k in self._shim_keys() if k not in review_mod.REVIEWED_KEYS]
         assert not extra, f"collected by the shim but not reviewed: {extra}"
+
+    @pytest.mark.parametrize("hash_value", ["$2a$14$testing-not-a-real-hash", "$2a$14$..."])
+    def test_the_shim_keeps_the_basic_auth_password_off_argv(self, tmp_path, hash_value):
+        """The review only asks whether a password is set, and python3's argv is readable by
+        every local user through `ps` — credentials must travel through the environment."""
+        import os
+        import shutil
+        import subprocess
+
+        real = shutil.which("python3")
+        assert real
+        shim = tmp_path / "shim"
+        shim.mkdir()
+        log = tmp_path / "python3.log"
+        stub = shim / "python3"
+        stub.write_text(f'#!/bin/sh\nprintf \'%s\\n\' "$*" >> "{log}"\nexec "{real}" "$@"\n')
+        stub.chmod(0o755)
+        env = {k: v for k, v in os.environ.items() if not k.startswith("DEPLOY_")}
+        env.update(PATH=f"{shim}{os.pathsep}{env['PATH']}", DEPLOY_BASIC_AUTH_PASSWORD="hunter2-plaintext", DEPLOY_BASIC_AUTH_HASH=hash_value, LT_COLOR="never")
+        script = f'. "{REPO_ROOT}/scripts/lib/common.sh"; config_review text --findings-only'
+        result = subprocess.run(["bash", "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout + result.stderr
+
+        argv = log.read_text()
+        assert "hunter2-plaintext" not in argv, f"basic-auth password on python3's command line: {argv}"
+        assert hash_value not in argv
+        assert ("still the template placeholder" in result.stdout) == hash_value.endswith("...")
+        # Presence still reaches the review: the password-without-user finding still fires.
+        assert "DEPLOY_BASIC_AUTH_PASSWORD is set but DEPLOY_BASIC_AUTH_USER is not" in result.stdout

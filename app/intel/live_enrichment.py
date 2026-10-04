@@ -24,7 +24,7 @@ from datetime import timedelta
 from urllib.parse import quote, urlparse
 
 from app.config import settings
-from app.intel.webhooks import _BLOCKED_IPS, UNSAFE_HEADER_KEYS
+from app.intel.webhooks import UNSAFE_HEADER_KEYS, _is_blocked_ip
 from app.network.url_pinning import pin_url_to_ip
 
 _log = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ def _ip_is_blocked(ip_str: str, *, require_public: bool = True) -> bool:
         return True  # not an IP → treat as unsafe
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
         addr = addr.ipv4_mapped
-    if addr in _BLOCKED_IPS:
+    if _is_blocked_ip(addr):
         return True
     if not require_public:
         return False

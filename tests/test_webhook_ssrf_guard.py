@@ -79,6 +79,57 @@ def test_an_ipv4_mapped_metadata_literal_is_refused_at_save(url):
         validate_url_syntax(url)
 
 
+# The other providers' credential endpoints. The docs promise "169.254.169.254 and the
+# other cloud metadata addresses" are refused either way; the list held only the first.
+_OTHER_METADATA = [
+    "169.254.170.2",  # AWS ECS task credentials
+    "169.254.170.23",  # AWS EKS Pod Identity
+    "fd00:ec2::23",  # AWS EKS Pod Identity, IPv6
+    "fd20:ce::254",  # Google Cloud, IPv6-only instances
+    "fd20:ce:0:0:0:0:0:254",  # Same endpoint, expanded spelling
+    "100.100.100.200",  # Alibaba Cloud
+    "192.0.0.192",  # Oracle Cloud, legacy
+    "168.63.129.16",  # Azure WireServer
+]
+
+
+@pytest.mark.parametrize("addr", _OTHER_METADATA)
+def test_other_cloud_metadata_addresses_are_blocked_through_a_hostname(monkeypatch, addr):
+    monkeypatch.setattr(webhooks.socket, "getaddrinfo", _fake_getaddrinfo({"evil.example": [addr]}))
+    with pytest.raises(WebhookError, match="not allowed"):
+        validate_url("http://evil.example/hook")
+
+
+@pytest.mark.parametrize("addr", _OTHER_METADATA)
+def test_other_cloud_metadata_addresses_are_refused_as_a_url_literal(addr):
+    from app.intel.webhooks import validate_url_syntax
+
+    host = f"[{addr}]" if ":" in addr else addr
+    with pytest.raises(WebhookError, match="not allowed"):
+        validate_url_syntax(f"http://{host}/")
+
+
+def test_azure_wireserver_is_blocked_even_when_public_hosts_are_required(monkeypatch):
+    """168.63.129.16 is globally routable, so `is_global` lets it through the strict mode too."""
+    monkeypatch.setattr(webhooks.socket, "getaddrinfo", _fake_getaddrinfo({"evil.example": ["168.63.129.16"]}))
+    with pytest.raises(WebhookError, match="not allowed"):
+        validate_url("http://evil.example/hook", require_public=True)
+
+
+def test_the_shared_guard_blocks_them_for_live_enrichment_too():
+    from app.intel.live_enrichment import _ip_is_blocked
+
+    for addr in _OTHER_METADATA:
+        assert _ip_is_blocked(addr, require_public=False) is True, addr
+
+
+@pytest.mark.parametrize("addr", ["10.0.0.5", "127.0.0.1", "100.100.100.100", "100.64.0.7", "fd00:1::5"])
+def test_internal_receivers_are_still_allowed_by_default(monkeypatch, addr):
+    """The block stays narrow: RFC1918, loopback, a tailnet (CGNAT) and a ULA receiver pass."""
+    monkeypatch.setattr(webhooks.socket, "getaddrinfo", _fake_getaddrinfo({"hook.internal": [addr]}))
+    assert validate_url("http://hook.internal/hook") == addr
+
+
 def test_a_port_out_of_range_is_a_refusal_not_an_exception():
     """`urlparse(...).port` raises ValueError past 65535. Unhandled, that was a 500 from the
     rule-list Refresh button, and a URL that saved fine and never worked."""

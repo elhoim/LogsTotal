@@ -45,12 +45,12 @@ fleet_remote_manifest_path() {
   printf '%s/fleet/manifest.json' "${dir%/}"
 }
 
-# _fleet_py ARGS... — run the manifest tool, quietly. Never fails the caller.
+# _fleet_py ARGS... — run the manifest tool, quietly.
 _fleet_py() {
   local module
   module="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/fleet_manifest.py"
   [ -f "$module" ] || return 0
-  run_py "$module" "$@" 2>/dev/null || true
+  run_py "$module" "$@" 2>/dev/null
 }
 
 # fleet_record_intent HOSTS INSTALL_DIR — write what the operator asked for.
@@ -152,13 +152,29 @@ fleet_adopt() {
     }
   fi
 
+  _fleet_py --file "$cache" validate || die "unsafe fleet record from ${from}; refusing to adopt it."
   FLEET_MANIFEST="$cache"
   FLEET_ADOPTED=yes
   export FLEET_MANIFEST FLEET_ADOPTED
 
+  # The record came off another machine and its entries go to ssh and host_exec, so they get
+  # hosts_from_args's alphabet (plus the comma between them) — checked here, on the cached
+  # copy too. And `local` is refused unless FLEET_FROM itself said it: from anywhere else it
+  # would run every heredoc with `bash -c` on THIS machine, which holds deploy-envs/ and the
+  # keys to every host.
+  local hosts
+  # shellcheck disable=SC2119
+  hosts=$(fleet_hosts)
+  case "$hosts" in
+    *[!A-Za-z0-9.,_@-]*) die "the fleet record from ${from} names a host that is not one: '${hosts}'" ;;
+  esac
+  if hosts_have_local "$hosts" && ! is_local_host "$from"; then
+    die "the fleet record from ${from} names \`local\` as a host. Refusing: it would run on this machine."
+  fi
+
   # The companion to the note on fleet_hosts above.
   # shellcheck disable=SC2119
-  info "fleet: $(fleet_hosts) (from the fleet record on ${from})"
+  info "fleet: ${hosts} (from the fleet record on ${from})"
   info "  secrets were NOT fetched — they never leave the machine that generated them."
   info "  So: upgrade, plan, status, logs, smoke, stop/start and remove. Not deploy or"
   info "  deploy:env, which mint and push per-host env files."
@@ -188,6 +204,10 @@ _fleet_fetch() {
   # `local` is only meaningful where it was written. Substituted here, once, against the
   # address the record holds or the host we just reached — which is reachable by
   # construction, since the file came off it.
+  _fleet_py --file "$tmp" validate || {
+    rm -f "$tmp"
+    die "unsafe fleet record from ${host}; refusing to adopt it."
+  }
   _fleet_py --file "$tmp" portable --fallback "$host" >/dev/null || {
     rm -f "$tmp"
     die "the record on ${host} names its control plane as \`local\` and carries no address.

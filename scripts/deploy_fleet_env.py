@@ -31,7 +31,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 
-from gen_secrets import _is_placeholder, generate  # noqa: E402
+from gen_secrets import _is_placeholder, generate, write_private  # noqa: E402
 from proxy_enable import apply_basic_auth, apply_proxy_settings  # noqa: E402
 
 STATE_VERSION = 1
@@ -250,10 +250,9 @@ def resolve_secrets(*, state: dict[str, str], seed_files: list[Path], force: boo
 
 
 def write_state(state_path: Path, secrets_map: dict[str, str]) -> None:
-    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     payload = {"version": STATE_VERSION, "secrets": secrets_map}
-    state_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    state_path.chmod(0o600)
+    write_private(state_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 # ── Env bodies ───────────────────────────────────────────────────────────────
@@ -419,10 +418,12 @@ def build(args: argparse.Namespace) -> int:
             "basic_auth_hash": args.basic_auth_hash or "",
         }
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     written: list[str] = []
     for index, host in enumerate(hosts):
         target = out_dir / f"{host['slug']}.env"
+        if target.is_symlink():
+            raise ValueError(f"Refusing to read a symlink: {target}")
         existing = target.read_text(encoding="utf-8") if target.exists() else ""
         if host["role"] == "control-plane":
             keys = control_plane_keys(secrets_map, admin_email=args.admin_email, bind_address=bind_address, proxied=proxied, proxy_tls=args.proxy_tls)
@@ -436,8 +437,7 @@ def build(args: argparse.Namespace) -> int:
                 huey_workers=args.huey_workers,
             )
             body = render_host_env(existing, role=host["role"], entry=host["entry"], keys=keys, proxy=None)
-        target.write_text(body, encoding="utf-8")
-        target.chmod(0o600)
+        write_private(target, body)
         label = host["role"] if host["role"] == "control-plane" else keys["WORKER_NAME"]
         written.append(f"  {target}  ({label})")
 

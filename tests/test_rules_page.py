@@ -387,18 +387,23 @@ class TestRowsAreOneLine:
     """
 
     async def test_a_long_condition_is_clipped_not_wrapped(self, member_client, async_db):
+        import re
+
         from app.models import IntelRule
 
         long_query = "cidr:" + ",".join(f"10.{n}.0.0/16" for n in range(20))
         async_db.add(IntelRule(name="Wide", query=long_query, is_builtin=True, scope="entity"))
         await async_db.commit()
 
-        body = (await member_client.get("/intel/rules")).text
+        row = _rule_row_markup((await member_client.get("/intel/rules")).text, "wide")
         # `truncate` on the collapsed cell, and the full text still reachable two ways:
         # the `title` on the cell, and the expander's `whitespace-pre-wrap` copy.
-        assert f'title="{long_query}"' in body
-        assert "break-all whitespace-pre-wrap" in body
-        assert 'break-all">' not in body, "the old wrapping condition cell is still rendered"
+        condition = re.search(r'<code class="([^"]*)" title="' + re.escape(long_query) + r'">', row)
+        assert condition is not None, "the collapsed condition must expose the full query in its title"
+        classes = condition.group(1).split()
+        assert "truncate" in classes, "the collapsed condition must truncate"
+        assert "break-all" not in classes, "the collapsed condition must not wrap"
+        assert f'break-all whitespace-pre-wrap">{long_query}</code>' in row
 
     async def test_every_row_is_searchable_by_the_filter(self, member_client, a_rule):
         """The filter reads `data-rule-search` off the DOM after each swap rather than a

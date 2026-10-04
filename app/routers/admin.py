@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 
 from app import activity, task_registry
 from app.auth.schemas import UserCreate, UserUpdate
-from app.auth.users import UserManager, current_superuser, get_user_manager
+from app.auth.users import UserManager, cookie_transport, current_superuser, get_jwt_strategy, get_user_manager
 from app.config import settings
 from app.constants import RECOVERY_MSG_ADMIN
 from app.database import get_async_session, utc_now_naive
@@ -1376,7 +1376,14 @@ async def user_set_password(
         return RedirectResponse(f"/admin/users?error={quote(exc.reason)}", status_code=303)
     # The password itself is never recorded, only that it was set and for whom.
     await activity.record("admin.user.set_password", request=request, user=user, target_type="user", target_id=str(target.id), summary=target.email)
-    return RedirectResponse("/admin/users", status_code=303)
+    response = RedirectResponse("/admin/users", status_code=303)
+    if target.id == user.id:
+        # The new password revoked every existing session, this one included; re-issue it
+        # so an admin changing their own (default) password is not signed out.
+        response = await cookie_transport.get_login_response(await get_jwt_strategy().write_token(target))
+        response.status_code = 303
+        response.headers["location"] = "/admin/users"
+    return response
 
 
 @router.post("/users/{user_id}/change-role")

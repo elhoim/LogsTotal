@@ -226,7 +226,8 @@
       <div class="flex items-center gap-2 text-xs text-gray-500">
         <span class="text-gray-300 font-medium">{{ analysis.provider_name }}</span>
         <span class="font-mono">{{ analysis.model }}</span>
-        {% if analysis.requested_by %}<span>· requested by {{ analysis.requested_by.display_name or analysis.requested_by.email }}</span>{% endif %}
+        {# Admin-only, like the job page's submitter block: the label falls back to the email. #}
+        {% if analysis.requested_by and user and user.is_superuser %}<span>· requested by {{ analysis.requested_by.display_name or analysis.requested_by.email }}</span>{% endif %}
         <span>· {{ analysis.created_at | time_ago }}</span>
       </div>
       <div class="flex items-center gap-2 text-xs text-gray-500">

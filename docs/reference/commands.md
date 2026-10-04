@@ -132,7 +132,7 @@ Development checkout only (needs PDM); on Docker, migrations run automatically w
 - `./logstotal db:migrate` — run pending migrations (upgrade to head)
 - `./logstotal db:revision -- "description"` — generate a new migration from model changes
 - `./logstotal db:stamp -- head` — stamp the migration version table without running migrations
-- `./logstotal db:to-postgres -- --postgres-url ...` — copy an existing SQLite database into PostgreSQL (see [Move from SQLite to PostgreSQL](../runbooks/sqlite-to-postgres.md)); refuses a populated target
+- `./logstotal db:to-postgres` — copy an existing SQLite database into the PostgreSQL database named by `POSTGRES_TARGET_URL` (see [Move from SQLite to PostgreSQL](../runbooks/sqlite-to-postgres.md)); refuses a populated target
 
 ## Backup / Restore
 
@@ -224,7 +224,7 @@ read is in the [`DEPLOY_*` reference](fleet.md#deploy_-reference).
 - `./logstotal deploy:logs` — recent logs from every host
 - `./logstotal deploy:shell` — SSH shell on one host (`DEPLOY_HOST`, default the first)
 - `./logstotal deploy:exec` — run `DEPLOY_CMD` on every host
-- `./logstotal deploy:smoke` — post-deploy health and smoke checks. The URL is `SMOKE_URL` if set, else `https://<DOMAIN>` behind the proxy, else `http://<first host>:8000`, else `http://localhost:8000`
+- `./logstotal deploy:smoke` — post-deploy health and smoke checks. The URL is `SMOKE_URL` if set, else `https://<DOMAIN>` behind the proxy, else `http://<first host>:8000`, else `http://localhost:8000`. With `PROXY_TLS=internal` or `custom` and a certificate this machine does not trust, the probes skip verification but withhold the basic-auth credentials; set `SMOKE_CACERT` to the issuing CA (Caddy's `root.crt` for `internal`) to verify and authenticate
 - `./logstotal deploy:remove` — remove LogsTotal from every deploy host (needs `DEPLOY_REMOVE_CONFIRM=yes`)
 - `./logstotal fleet` — on the control plane, show its record of the fleet: hosts, roles, versions, results (see [What the control plane knows](fleet.md#what-the-control-plane-knows))
 - `./logstotal fleet:pull -- <control plane>` — fetch a control plane's fleet record and write a local `deploy.env` from it (refuses to overwrite one; `FORCE=yes` overrides)
