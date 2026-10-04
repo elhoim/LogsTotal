@@ -175,9 +175,21 @@ Tag changes never put a tag name in the URL. Clients POST to `/intel/tags/rename
 field, and remove a tag from a job or an entity with POST `/jobs/{id}/tags/remove` or
 `/intel/entities/{id}/tags/remove`, also with `tag` in the form. Tag names may contain `/`.
 
+## Browser sessions
+
+Browser sessions expire after 24 hours and are revoked when the account's password
+changes, including an administrator reset. Upgrading to password-bound sessions signs
+out existing sessions once. Administrator self-resets refresh the current cookie;
+self-service password changes require signing in again. API tokens have their own
+revocation controls.
+
+`PATCH /api/users/me` requires `current_password` when setting a password or email.
+Profile-only updates remain available without reauthentication. Administrator resets
+use the administrator's authorization.
+
 ## CSRF protection
 
-State-changing requests (`POST`/`PUT`/`PATCH`/`DELETE`) that carry the `logstotal_auth` cookie must present an `Origin` or `Referer` header matching the request's `Host`; otherwise they are rejected with **403**. Anonymous requests — including `/upload` and login — are unaffected, as is `POST /auth/cookie/logout` (browsers strip `Origin` on some redirect flows, and logout is a no-op when not logged in).
+State-changing requests (`POST`/`PUT`/`PATCH`/`DELETE`) that carry the `logstotal_auth` cookie must present an `Origin` or `Referer` header matching the request's `Host`; otherwise they are rejected with **403**. `POST /auth/cookie/login` is checked the same way even without the cookie, whenever the client sends `Origin` or `Referer` — otherwise a hostile page could sign a visitor into the attacker's account (login CSRF); a script that sends neither header can still log in. Other anonymous requests — including `/upload` — are unaffected, as is `POST /auth/cookie/logout` (browsers strip `Origin` on some redirect flows, and logout is a no-op when not logged in).
 
 The check needs no configuration, but it has one operational consequence: **your reverse proxy must not rewrite `Host` without also rewriting `Origin`.** If authenticated form posts start failing with `CSRF validation failed`, compare the two headers the app receives — a proxy setting `Host` to an internal name while the browser sends the public origin is the usual cause.
 

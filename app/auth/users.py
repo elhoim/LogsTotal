@@ -1,8 +1,11 @@
 """FastAPI-Users setup: user manager, cookie+JWT auth backend, dependency helpers."""
 
+import hashlib
+import hmac
 import logging
 import uuid
 
+import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
 from fastapi_users.authentication import (
@@ -11,10 +14,12 @@ from fastapi_users.authentication import (
     JWTStrategy,
 )
 from fastapi_users.exceptions import InvalidPasswordException
+from fastapi_users.jwt import decode_jwt, generate_jwt
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import activity
+from app.auth.schemas import UserSelfUpdate
 from app.config import settings
 from app.database import get_async_session
 from app.models import User
@@ -69,6 +74,20 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
         if email and email in password.lower():
             raise InvalidPasswordException(reason="Password must not contain the account email.")
 
+    async def update(self, user_update, user, safe: bool = False, request: Request | None = None):
+        """Require the current password for a self-service password or email change.
+
+        Only ``UserSelfUpdate`` (the ``PATCH /api/users/me`` body) is checked; the admin
+        set-password path passes ``UserUpdate``. ``InvalidPasswordException`` is what the
+        fastapi-users route already turns into a 400.
+        """
+        if isinstance(user_update, UserSelfUpdate) and (user_update.password is not None or user_update.email is not None):
+            current = user_update.current_password or ""
+            verified, _ = self.password_helper.verify_and_update(current, user.hashed_password)
+            if not current or not verified:
+                raise InvalidPasswordException(reason="The current password is required to change the password or email.")
+        return await super().update(user_update, user, safe=safe, request=request)
+
     async def authenticate(self, credentials):
         """Record the outcome of a sign-in attempt.
 
@@ -117,8 +136,39 @@ cookie_transport = CookieTransport(
 )
 
 
+def _password_fingerprint(user: User) -> str:
+    """A keyed digest of the stored password hash, so the JWT never carries the hash itself."""
+    return hmac.new(settings.secret_key.encode(), (user.hashed_password or "").encode(), hashlib.sha256).hexdigest()[:32]
+
+
+class SessionJWTStrategy(JWTStrategy):
+    """JWTStrategy whose tokens die when the password changes.
+
+    A plain fastapi-users JWT names only the user, so a stolen cookie outlived a password
+    reset for its full 24h. Binding it to the password hash makes any password change —
+    /admin/users set-password or PATCH /api/users/me — revoke every session issued before
+    it, with no server-side session store. Logout still only clears the browser cookie.
+    """
+
+    async def write_token(self, user: User) -> str:
+        data = {"sub": str(user.id), "aud": self.token_audience, "pwd": _password_fingerprint(user)}
+        return generate_jwt(data, self.encode_key, self.lifetime_seconds, algorithm=self.algorithm)
+
+    async def read_token(self, token: str | None, user_manager) -> User | None:
+        user = await super().read_token(token, user_manager)
+        if user is None:
+            return None
+        try:
+            claim = decode_jwt(token, self.decode_key, self.token_audience, algorithms=[self.algorithm]).get("pwd")
+        except jwt.PyJWTError:
+            return None
+        if not isinstance(claim, str) or not claim.isascii() or not hmac.compare_digest(claim, _password_fingerprint(user)):
+            return None
+        return user
+
+
 def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(secret=settings.secret_key, lifetime_seconds=86400)
+    return SessionJWTStrategy(secret=settings.secret_key, lifetime_seconds=86400)
 
 
 auth_backend = AuthenticationBackend(

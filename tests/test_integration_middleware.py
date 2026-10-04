@@ -183,6 +183,39 @@ async def test_csrf_rejection_returns_json_to_an_api_client(admin_client):
     assert "detail" in resp.json()
 
 
+# Login CSRF. A cross-site POST carries no SameSite=Lax cookie, so a check that engaged only
+# on cookie-authed requests never saw the login form: an attacker's page could sign a visitor
+# into the attacker's account, and what the visitor then uploaded — private jobs included —
+# belonged to the attacker. Login is checked with or without the cookie.
+
+_LOGIN_FORM = {"username": "admin@test.example.com", "password": "testpass123"}
+
+
+async def test_cross_site_login_is_refused_without_a_cookie(test_client, admin_user):
+    resp = await test_client.post("/auth/cookie/login", data=_LOGIN_FORM, headers={"origin": "https://evil.example.com"}, follow_redirects=False)
+    assert resp.status_code == 403
+    assert "logstotal_auth" not in resp.headers.get("set-cookie", "")
+
+
+async def test_cross_site_login_by_referer_is_refused_without_a_cookie(test_client, admin_user):
+    del test_client.headers["origin"]
+    resp = await test_client.post("/auth/cookie/login", data=_LOGIN_FORM, headers={"referer": "https://evil.example.com/page"}, follow_redirects=False)
+    assert resp.status_code == 403
+
+
+async def test_same_origin_login_still_works(test_client, admin_user):
+    resp = await test_client.post("/auth/cookie/login", data=_LOGIN_FORM, follow_redirects=False)
+    assert resp.status_code in (200, 204)
+    assert "logstotal_auth" in resp.headers.get("set-cookie", "")
+
+
+async def test_login_without_origin_or_referer_still_works(test_client, admin_user):
+    """A script logging in sends neither header; a browser posting cross-site always sends Origin."""
+    del test_client.headers["origin"]
+    resp = await test_client.post("/auth/cookie/login", data=_LOGIN_FORM, follow_redirects=False)
+    assert resp.status_code in (200, 204)
+
+
 # ── Static file Cache-Control ────────────────────────────────────────────────
 
 

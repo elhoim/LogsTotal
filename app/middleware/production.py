@@ -198,7 +198,8 @@ class CsrfMiddleware:
     """Origin/Referer CSRF defense for state-changing requests.
 
     Only enforced when the fastapi-users auth cookie is present — anonymous
-    requests (including /upload, login, and public GETs) are unaffected.
+    requests (including /upload and public GETs) are unaffected. Login is the
+    exception: it is checked without the cookie too, when Origin/Referer is sent.
     For authenticated POST/PUT/PATCH/DELETE, the Origin or Referer header
     must match the request's Host. Modern browsers set Origin on all
     cross-origin state-changing requests, so a missing/mismatched Origin
@@ -210,6 +211,8 @@ class CsrfMiddleware:
     # Logout: anonymous-safe (no-op when not logged in) and some browsers strip
     # Origin on redirects; exempting it keeps logout working across contexts.
     EXEMPT_PATHS = frozenset({"/auth/cookie/logout"})
+    # Checked even without the auth cookie, whenever the client sent Origin or Referer.
+    LOGIN_PATHS = frozenset({"/auth/cookie/login"})
 
     def __init__(self, app: ASGIApp):
         self.app = app
@@ -243,8 +246,13 @@ class CsrfMiddleware:
         # Cookies join the same way a client would have sent them in one header.
         cookie_header = "; ".join(headers.get("cookie", []))
         if f"{self.AUTH_COOKIE_NAME}=" not in cookie_header:
-            await self.app(scope, receive, send)
-            return
+            # Login CSRF: a cross-site POST carries no SameSite=Lax cookie, yet the 204's
+            # Set-Cookie is kept, so a hostile page could sign the visitor into the
+            # attacker's account. Browsers always send Origin on a cross-site POST; a
+            # script logging in sends neither header and is let through.
+            if scope.get("path", "") not in self.LOGIN_PATHS or not (headers.get("origin") or headers.get("referer")):
+                await self.app(scope, receive, send)
+                return
 
         # A repeated Host/Origin/Referer on a cookie-authed write has no legitimate
         # source and makes "which one did the app see?" unanswerable. Fail closed.
