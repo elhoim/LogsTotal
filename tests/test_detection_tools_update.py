@@ -315,3 +315,25 @@ def test_artifact_inventory_includes_every_engine_without_network(monkeypatch, c
         "tools/rsigma/upstream.json",
         "tools/hayabusa/hayabusa-mac",
     } <= paths
+
+
+def test_zircolite_version_includes_profile_pin(tmp_path):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "windows.yml").write_text("tasks:\n  - tool: zircolite\n    profile: windows\n")
+    assert updater.local_version(tmp_path, "zircolite") == "4.0.0"
+
+
+def test_legacy_zircolite_override_version_still_discovered(tmp_path):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "custom.yml").write_text("tasks:\n  - tool: zircolite\n    docker_image: wagga40/zircolite:3.8.1\n")
+    assert updater.local_version(tmp_path, "zircolite") == "3.8.1"
+
+
+def test_profile_pin_and_different_legacy_version_report_conflict(tmp_path):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "windows.yml").write_text("tasks:\n  - tool: zircolite\n    profile: windows\n  - tool: zircolite\n    docker_image: wagga40/zircolite:3.8.1\n")
+    with pytest.raises(ValueError, match="inconsistent"):
+        updater.local_version(tmp_path, "zircolite")

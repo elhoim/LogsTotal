@@ -173,7 +173,12 @@ class TestShippedWorkflows:
         root = pathlib.Path(__file__).resolve().parents[1]
         files = sorted((root / "workflows").glob("*.yml"))
         assert files, "no shipped workflow YAMLs found"
-        return root, [(f, yaml.safe_load(f.read_text())) for f in files]
+        shipped = []
+        for file in files:
+            data = yaml.safe_load(file.read_text())
+            data["tasks"] = parse_workflow_yaml(file.read_text())
+            shipped.append((file, data))
+        return root, shipped
 
     def test_all_parse_and_declare_valid_log_types(self):
         from app.models import LogType

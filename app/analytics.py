@@ -23,6 +23,7 @@ from app.constants import RE_DOMAIN, RE_HASH, RE_IPV4, RE_IPV6
 from app.intel.event_markers import MarkerAccumulator, build_index
 from app.intel.event_timeline import extract_all_from_raw_output, format_timeline
 from app.intel.tactics import _MITRE_TACTICS, _build_findings_index
+from app.tools.event_fields import EventView
 
 if TYPE_CHECKING:
     from app.models import AnalysisJob
@@ -157,21 +158,12 @@ def _compute_analytics_data(job: AnalysisJob, job_dir: Path | None = None) -> di
                 if trimmed:
                     bucket.append(trimmed)
 
-        evtx_root = event.get("Event", {})
-        evtx_data = evtx_root.get("EventData", {}) if isinstance(evtx_root, dict) else {}
-        evtx_sys = evtx_root.get("System", {}) if isinstance(evtx_root, dict) else {}
-
-        comp = event.get("Computer") or (evtx_sys.get("Computer") if isinstance(evtx_sys, dict) else None)
+        view = EventView(event)
+        comp = view.analytics_computer
         if comp and isinstance(comp, str):
             computers.add(comp.strip())
 
-        detail_dict = event.get("Details", {})
-
-        scan_dicts = [event]
-        if isinstance(detail_dict, dict):
-            scan_dicts.append(detail_dict)
-        if isinstance(evtx_data, dict) and evtx_data:
-            scan_dicts.append(evtx_data)
+        scan_dicts = view.analytics_sources
 
         threat.add(scan_dicts)
 

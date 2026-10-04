@@ -12,8 +12,8 @@ import re
 from pathlib import Path
 
 import pytest
-import yaml
 
+from app.detection.workflow_runner import parse_workflow_yaml
 from app.tools.base import resolve_tool_path
 from app.tools.chainsaw import ChainsawAdapter
 from app.tools.hayabusa import HayabusaAdapter
@@ -23,8 +23,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def task_config(workflow, tool):
-    data = yaml.safe_load((ROOT / "workflows" / workflow).read_text())
-    return next(task for task in data["tasks"] if task["tool"] == tool)
+    tasks = parse_workflow_yaml((ROOT / "workflows" / workflow).read_text())
+    return next(task for task in tasks if task["tool"] == tool)
 
 
 @pytest.mark.parametrize("tool,adapter_class", [("chainsaw", ChainsawAdapter), ("hayabusa", HayabusaAdapter)])

@@ -10,6 +10,8 @@ import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from app.tools.event_fields import HAYABUSA_TACTIC_ABBREV, EventView
+
 if TYPE_CHECKING:
     from app.models import AnalysisJob
 
@@ -32,6 +34,9 @@ _MITRE_TACTICS = [
 ]
 
 _MITRE_TACTICS_SET = frozenset(_MITRE_TACTICS)
+
+# Compatibility alias retained for callers that imported the former constant.
+_HAYABUSA_TACTIC_ABBREV = HAYABUSA_TACTIC_ABBREV
 
 # ATT&CK rainbow — one distinct hue per tactic, violet→red→orange→yellow→green→teal→blue→purple→pink→red
 _MITRE_TACTIC_COLORS = {
@@ -60,24 +65,6 @@ _OTHER_TACTIC_COLOR = "#4b5563"  # gray-600
 MITRE_TACTICS: tuple[str, ...] = tuple(_MITRE_TACTICS)
 OTHER_TACTIC = _OTHER_TACTIC
 TACTIC_COLORS: dict[str, str] = {**_MITRE_TACTIC_COLORS, _OTHER_TACTIC: _OTHER_TACTIC_COLOR}
-
-# Hayabusa abbreviations → canonical tactic name
-_HAYABUSA_TACTIC_ABBREV = {
-    "recon": "reconnaissance",
-    "resdev": "resource_development",
-    "initaccess": "initial_access",
-    "exec": "execution",
-    "persis": "persistence",
-    "privesc": "privilege_escalation",
-    "evas": "defense_evasion",
-    "credaccess": "credential_access",
-    "disc": "discovery",
-    "latmov": "lateral_movement",
-    "collect": "collection",
-    "c2": "command_and_control",
-    "exfil": "exfiltration",
-    "impact": "impact",
-}
 
 _RE_TECHNIQUE_ID = re.compile(r"[tT]\d{4}")
 
@@ -224,27 +211,17 @@ def _resolve_tactic_from_event(
     if tactic:
         return tactic
 
-    # Strategy 2: Hayabusa MitreTactics field (abbreviations like "Evas")
-    mt = event.get("MitreTactics")
-    if mt:
-        vals = mt if isinstance(mt, list) else [t.strip() for t in str(mt).split(",")]
-        for v in vals:
-            mapped = _HAYABUSA_TACTIC_ABBREV.get(v.lower())
-            if mapped:
-                return mapped
+    view = EventView(event)
+    # Native tactic hints retain their source order after rule-name resolution.
+    for tactic in view.tactic_hints():
+        return tactic
 
-    # Strategy 3: technique IDs in MitreTags / OtherTags → learned mapping
-    for field in ("MitreTags", "OtherTags", "tags"):
-        raw = event.get(field)
-        if not raw:
-            continue
-        items = raw if isinstance(raw, list) else [t.strip() for t in str(raw).split(",")]
-        for item in items:
-            m = _RE_TECHNIQUE_ID.match(str(item).lower())
-            if m:
-                resolved = technique_tactic.get(m.group())
-                if resolved:
-                    return resolved
+    for item in view.technique_hints():
+        m = _RE_TECHNIQUE_ID.match(str(item).lower())
+        if m:
+            resolved = technique_tactic.get(m.group())
+            if resolved:
+                return resolved
 
     return _OTHER_TACTIC
 

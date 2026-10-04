@@ -6,7 +6,7 @@ import os
 import re
 import tempfile
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -14,8 +14,9 @@ from typing import Any
 import yaml
 
 from app.json_utils import loads
-from app.tools.base import NormalizedFinding, ToolAdapter, ToolOutput
+from app.tools.base import ToolAdapter, ToolOutput
 from app.tools.catalog import TOOLS
+from app.tools.mapping import MetadataMapping, OutputMapping, Selector, decode_records, file_records
 from app.tools.output import RawMatch
 from app.tools.rsigma_windows import CATEGORIES, SERVICES, input_filter, normalize_event
 from app.yaml_utils import safe_load
@@ -46,8 +47,33 @@ _RESERVED = frozenset(
 )
 
 
+def _validate_detection(record: Any) -> None:
+    if not isinstance(record, dict) or "correlation_type" in record or not isinstance(record.get("event"), dict) or not record.get("rule_title"):
+        raise ValueError("Invalid RSigma detection record (correlation output is not supported)")
+    tags = record.get("tags") or []
+    if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
+        raise ValueError("Invalid RSigma detection tags")
+
+
 class RsigmaAdapter(ToolAdapter):
     name = "rsigma"
+    output_mapping = OutputMapping(
+        finding=MetadataMapping(
+            rule_name=Selector((("rule_title",),), transforms=(str,)),
+            rule_id=Selector((("rule_id",),), default="", transforms=(str,)),
+            severity=Selector((("level",),), fallback="missing"),
+            tags=Selector((("tags",),), default=[]),
+        ),
+        format="jsonl",
+        events=Selector((("event",),), fallback="missing", transforms=(lambda event: [event],)),
+        event_transform=normalize_event,
+        timestamp=lambda event: event.get("Timestamp"),
+        validate=_validate_detection,
+        strict=True,
+        iterable_input=True,
+        grouping="identity",
+        lookup_empty_id=True,
+    )
     SUPPORTED_TYPES = TOOLS["rsigma"].supported_types
 
     def __init__(self, config: dict[str, Any]):
@@ -61,9 +87,6 @@ class RsigmaAdapter(ToolAdapter):
             raise ValueError("rsigma eval is single-threaded; omit threads or set threads: 1")
         if any(arg.split("=")[0] in _RESERVED for arg in self._extra_args):
             raise ValueError("rsigma extra_args cannot override input, output, or completion flags")
-
-    def _output_filename(self, file_path: Path) -> str:
-        return file_path.stem + TOOLS[self.name].output_suffix
 
     def _build_local_cmd(self, tool_path: Path, file_path: Path, output_file: Path):
         if error := self._check_binary_executable(tool_path):
@@ -206,42 +229,10 @@ class RsigmaAdapter(ToolAdapter):
 
     @staticmethod
     def _records(path: Path) -> Iterator[dict]:
-        with path.open("rb") as stream:
-            for line in stream:
-                if line.strip():
-                    yield loads(line)
+        return file_records(path, format="jsonl", strict=True)
 
     @staticmethod
     def _match(record: Any) -> RawMatch:
-        if not isinstance(record, dict) or "correlation_type" in record or not isinstance(record.get("event"), dict) or not record.get("rule_title"):
-            raise ValueError("Invalid RSigma detection record (correlation output is not supported)")
-        tags = record.get("tags") or []
-        if not isinstance(tags, list) or any(not isinstance(tag, str) for tag in tags):
-            raise ValueError("Invalid RSigma detection tags")
-        event = normalize_event(record["event"])
-        return RawMatch(event, str(record["rule_title"]), str(record.get("rule_id") or ""), record.get("level"), tags, event.get("Timestamp"))
-
-    @classmethod
-    def iter_raw_matches(cls, path: Path) -> Iterator[RawMatch]:
-        for record in cls._records(path):
-            yield cls._match(record)
-
-    def normalize(self, raw: Iterable[dict]) -> list[NormalizedFinding]:
-        grouped = {}
-        for record in raw:
-            match = self._match(record)
-            key = match.rule_id or match.rule_name
-            if key not in grouped:
-                grouped[key] = NormalizedFinding(
-                    rule_name=match.rule_name,
-                    rule_id=match.rule_id,
-                    severity=self._normalize_severity(match.severity),
-                    tags=match.tags,
-                    count=0,
-                    rule_content=self._lookup_rule_yaml(match.rule_id),
-                )
-            finding = grouped[key]
-            finding.count += 1
-            if len(finding.details) < self.max_details:
-                finding.details.append(match.event)
-        return list(grouped.values())
+        detection = next(decode_records([record], RsigmaAdapter.output_mapping, purpose="raw"))
+        event = detection.events[0]
+        return RawMatch(event, detection.rule_name, detection.rule_id, detection.severity, detection.tags, event.get("Timestamp"))

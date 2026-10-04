@@ -18,6 +18,13 @@ class ReleaseAsset:
 
 
 @dataclass(frozen=True)
+class RuntimeProfile:
+    name: str
+    rules_path: str | tuple[str, ...]
+    options: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
 class ToolSpec:
     name: str
     adapter: str
@@ -32,6 +39,8 @@ class ToolSpec:
     # For a pre-1.0 engine a minor bump can change its CLI/output contract.
     minor_is_breaking: bool = False
     required_files: tuple[str, ...] = ()
+    profiles: tuple[RuntimeProfile, ...] = ()
+    docker_image: str | None = None
 
 
 TOOLS = {
@@ -44,6 +53,12 @@ TOOLS = {
         False,
         "wagga40/Zircolite",
         "wagga40/Zircolite",
+        profiles=(
+            RuntimeProfile("windows", "tools/zircolite/rules/rules_windows_merged.json"),
+            RuntimeProfile("linux", "tools/zircolite/rules/rules_linux.json"),
+            RuntimeProfile("journald", "tools/zircolite/rules/rules_linux.json", options=(("config", "zircolite_journald.yaml"),)),
+        ),
+        docker_image="wagga40/zircolite:4.0.0@sha256:552f1900fb5533a58fdad1ae61f46c09018271787d5d7a2d08cb318d3221461f",
     ),
     "chainsaw": ToolSpec(
         "chainsaw",
@@ -60,6 +75,7 @@ TOOLS = {
             ReleaseAsset("aarch64-darwin", "chainsaw_aarch64-apple-darwin.zip", "chainsaw-mac", "chainsaw"),
         ),
         ("--version",),
+        profiles=(RuntimeProfile("default", ("tools/chainsaw/sigma/rules", "tools/chainsaw/sigma/rules-emerging-threats", "tools/chainsaw/sigma/rules-threat-hunting")),),
     ),
     "hayabusa": ToolSpec(
         "hayabusa",
@@ -76,6 +92,7 @@ TOOLS = {
             ReleaseAsset("aarch64-darwin", "hayabusa-{version}-mac-aarch64.zip", "hayabusa-mac", "hayabusa-{version}-mac-aarch64"),
         ),
         ("help",),
+        profiles=(RuntimeProfile("default", "tools/hayabusa/rules/"),),
     ),
     "chopchopgo": ToolSpec(
         "chopchopgo",
@@ -90,6 +107,7 @@ TOOLS = {
             ReleaseAsset("x86_64-linux", "ChopChopGo-{tag}-linux-amd64.zip", "chopchopgo-intel-lin", "ChopChopGo"),
             ReleaseAsset("aarch64-linux", "ChopChopGo-{tag}-linux-arm64.zip", "chopchopgo-arm-lin", "ChopChopGo"),
         ),
+        profiles=(RuntimeProfile("default", "tools/chopchopgo/rules/builtin"),),
     ),
     "rsigma": ToolSpec(
         "rsigma",
@@ -108,6 +126,7 @@ TOOLS = {
         ("--version",),
         minor_is_breaking=True,
         required_files=("config/rsigma.yml", "mappings/windows.yml", "LICENSE-SigmaHQ"),
+        profiles=(RuntimeProfile("default", "tools/rsigma/rules/"),),
     ),
 }
 

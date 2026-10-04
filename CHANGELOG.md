@@ -17,6 +17,10 @@ backup step, migration ordering, and rollback for each deployment path.
 - A shared tool catalog and adapter-owned raw readers, used by runtime registration,
   diagnostics, scaling, updates and artifact checks. See the expanded contributor checklist
   for adding engines without changing the analytics parser.
+- Typed output mappings shared by finding aggregation and raw-event readers, with explicit
+  compatibility policies preserving existing counts, samples, timelines and analytics.
+- Optional workflow profiles for shared tool paths, rules and pinned container images.
+  Existing explicit workflow tasks retain their behavior and can override profile defaults.
 
 ### Fixed
 

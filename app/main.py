@@ -72,6 +72,7 @@ async def _warn_missing_tool_paths():
 
     from app.models import WorkflowDef
     from app.tools.base import resolve_tool_path
+    from app.tools.runtime import resolve_task_config
     from app.yaml_utils import safe_load as yaml_safe_load
 
     try:
@@ -82,9 +83,10 @@ async def _warn_missing_tool_paths():
         for wf in wf_defs:
             try:
                 data = yaml_safe_load(wf.tasks_yaml) or {}
+                tasks = [resolve_task_config(task) for task in data.get("tasks", [])]
             except Exception:
                 continue
-            for task in data.get("tasks", []):
+            for task in tasks:
                 raw = task.get("tool_path")
                 if not raw:
                     continue

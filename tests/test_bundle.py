@@ -66,6 +66,10 @@ def _archive(tmp_path: Path, version: str = "1.2.3") -> Path:
     for name in ("Taskfile.yml", "Dockerfile", "Dockerfile.garage", "docker-compose.yml", "docker-compose.worker.yml"):
         shutil.copy(REPO_ROOT / name, src / name)
     shutil.copytree(REPO_ROOT / "workflows", src / "workflows", dirs_exist_ok=True)
+    (src / "app/tools").mkdir(parents=True)
+    shutil.copy(REPO_ROOT / "app/tools/catalog.py", src / "app/tools/catalog.py")
+    (src / "scripts").mkdir()
+    shutil.copy(REPO_ROOT / "scripts/tool_runtime_inventory.py", src / "scripts/tool_runtime_inventory.py")
     (src / "VERSION").write_text(f"version: {version}\n", encoding="utf-8")
     out = tmp_path / f"logstotal-{version}.7z"
     subprocess.run(["7z", "a", "-mf=off", str(out), "."], cwd=src, capture_output=True, check=True)
@@ -146,8 +150,10 @@ def test_every_workflow_image_would_be_bundled():
         check=True,
     ).stdout
     declared = set()
+    from app.detection.workflow_runner import parse_workflow_yaml
+
     for wf in (REPO_ROOT / "workflows").glob("*.yml"):
-        declared |= set(re.findall(r"docker_image:\s*(\S+)", wf.read_text(encoding="utf-8")))
+        declared.update(task["docker_image"] for task in parse_workflow_yaml(wf.read_text(encoding="utf-8")) if task.get("docker_image"))
     for image in declared:
         assert image in listed, f"{image} is used by a workflow and would not be bundled"
 
@@ -552,3 +558,43 @@ def test_fleet_bundle_upgrade_uses_local_archive_and_images(tmp_path):
     assert "logstotal-1.2.3.7z" in output
     assert "STUB task package" not in output
     assert (install / "VERSION").read_text() == "version: 0.0.1\n"
+
+
+@pytest.mark.skipif(shutil.which("7z") is None, reason="7z not available")
+def test_bundle_refuses_an_archive_whose_profile_inventory_cannot_load(tmp_path):
+    archive = _archive(tmp_path)
+    subprocess.run(["7z", "d", str(archive), "app/tools/catalog.py"], capture_output=True, check=True)
+    shim = _docker_stub(tmp_path)
+    env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}", "VERSION": "1.2.3", "ARCHIVE": str(archive), "BUNDLE_OUT": str(tmp_path / "bundle.7z")}
+    result = subprocess.run(["bash", str(BUNDLE_SH), "build"], cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert result.returncode != 0, "a bundle missing profile images must not report success"
+    assert not (tmp_path / "bundle.7z").exists()
+
+
+@pytest.mark.skipif(shutil.which("7z") is None, reason="7z not available")
+@pytest.mark.parametrize("container_tool", [True, False])
+def test_bundle_builds_legacy_archive_without_runtime_inventory_helper(tmp_path, container_tool):
+    src = tmp_path / "legacy"
+    src.mkdir()
+    for name in ("Dockerfile", "Dockerfile.garage", "docker-compose.yml", "docker-compose.worker.yml"):
+        shutil.copy(REPO_ROOT / name, src / name)
+    (src / "VERSION").write_text("version: 1.2.3\n")
+    (src / "workflows").mkdir()
+    workflow = (
+        "tasks:\n  - tool: zircolite\n    docker_image: example/legacy:1@sha256:abc123\n"
+        if container_tool
+        else "tasks:\n  - tool: hayabusa\n    tool_path: tools/hayabusa/hayabusa-mac\n"
+    )
+    (src / "workflows/legacy.yml").write_text(workflow)
+    archive = tmp_path / "legacy-1.2.3.7z"
+    subprocess.run(["7z", "a", "-mf=off", str(archive), "."], cwd=src, capture_output=True, check=True)
+    shim = _docker_stub(tmp_path)
+    bundle = tmp_path / "bundle.7z"
+    env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}", "ARCHIVE": str(archive), "VERSION": "1.2.3", "BUNDLE_OUT": str(bundle)}
+    result = subprocess.run(["bash", str(BUNDLE_SH), "build"], cwd=REPO_ROOT, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    extracted = subprocess.run(["7z", "x", "-so", str(bundle), "bundle-manifest.json"], capture_output=True, text=True, check=True)
+    manifest = json.loads(extracted.stdout)
+    assert ("example/legacy:1" in manifest["images"]) is container_tool
+    assert "redis:7-alpine" in manifest["images"]
+    assert (shim / "build-contexts").read_text().splitlines() == ["version: 1.2.3"] * 2

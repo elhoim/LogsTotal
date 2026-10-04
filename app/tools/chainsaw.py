@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
-from typing import Any
 
-from app.tools.base import NormalizedFinding, ToolAdapter
+from app.tools.base import ToolAdapter
 from app.tools.catalog import TOOLS
-from app.tools.output import RawMatch, event_timestamp, json_records
+from app.tools.mapping import MetadataMapping, OutputMapping, Selector, list_tags
 
-_log = logging.getLogger(__name__)
+
+def _document_data(event: dict):
+    document = event.get("document")
+    document = document if isinstance(document, dict) else {}
+    return document.get("data", document)
 
 
 class ChainsawAdapter(ToolAdapter):
@@ -71,21 +73,30 @@ class ChainsawAdapter(ToolAdapter):
     """
 
     name = "chainsaw"
+    output_mapping = OutputMapping(
+        finding=MetadataMapping(
+            rule_name=Selector((("name",), ("group",)), default="Unknown Rule", transforms=(str,)),
+            rule_id=Selector((("id",),), default="", transforms=(str,)),
+            severity=Selector((("level",),), default="informational", fallback="missing"),
+            tags=Selector((("tags",),), default=[], transforms=(list_tags,)),
+        ),
+        raw_overrides={
+            "rule_name": Selector((("name",), ("group",)), default="", fallback="missing"),
+            "rule_id": Selector((("id",),), default="", fallback="missing"),
+            "severity": Selector((("level",),), fallback="missing"),
+            "tags": Selector(default=[]),
+        },
+        format="jsonl",
+        detail_projection=_document_data,
+        record_label="hit(s)",
+    )
 
     SUPPORTED_TYPES = TOOLS["chainsaw"].supported_types
 
     _DEFAULT_CHAINSAW_RULES = "tools/chainsaw/rules/"
     _DEFAULT_MAPPING = "tools/chainsaw/mappings/sigma-event-logs-all.yml"
 
-    @classmethod
-    def iter_raw_matches(cls, path: Path):
-        for event in json_records(path, jsonl=True):
-            yield RawMatch(event, event.get("name", event.get("group", "")), event.get("id", ""), event.get("level"), timestamp=event_timestamp(event))
-
     # ── subclass hooks ───────────────────────────────────────────────────
-
-    def _output_filename(self, file_path: Path) -> str:
-        return file_path.stem + TOOLS["chainsaw"].output_suffix
 
     def _build_local_cmd(
         self,
@@ -128,58 +139,3 @@ class ChainsawAdapter(ToolAdapter):
             cmd += ["--status", str(status)]
         cmd.extend(self._extra_args)
         return cmd, ""
-
-    def _load_output(self, path: Path) -> Any:
-        return self._load_jsonl(path)
-
-    # ── normalize ────────────────────────────────────────────────────────
-
-    def normalize(self, raw: Any) -> list[NormalizedFinding]:
-        """
-        Chainsaw JSONL output: one JSON object per line.  Each hit has:
-        - name: rule title
-        - level: severity
-        - tags: list of MITRE strings
-        - id: rule UUID (optional)
-        - document: { "kind", "path", "data": { "Event": … } }
-
-        We group by rule name to aggregate counts and keep sample details.
-        """
-        grouped: dict[str, NormalizedFinding] = {}
-        skipped = 0
-
-        for hit in self._dict_records(raw):
-            try:
-                rule_name = str(hit.get("name") or hit.get("group") or "Unknown Rule")
-                rule_id = str(hit.get("id") or "")
-                level = self._normalize_severity(hit.get("level", "informational"))
-                tags = hit.get("tags") or []
-                if not isinstance(tags, list):
-                    tags = [str(tags)]
-
-                doc = hit.get("document")
-                doc = doc if isinstance(doc, dict) else {}
-                event_data = doc.get("data", doc)
-
-                if rule_name not in grouped:
-                    grouped[rule_name] = NormalizedFinding(
-                        rule_name=rule_name,
-                        severity=level,
-                        count=0,
-                        rule_id=rule_id,
-                        tags=tags,
-                        details=[],
-                        rule_content=self._lookup_rule_yaml(rule_id) if rule_id else "",
-                    )
-
-                entry = grouped[rule_name]
-                entry.count += 1
-                if len(entry.details) < self.max_details:
-                    entry.details.append(event_data)
-            except Exception:
-                # Per-record isolation — see the same guard in the Hayabusa adapter.
-                skipped += 1
-
-        if skipped:
-            _log.warning("chainsaw: skipped %d unparseable hit(s)", skipped)
-        return list(grouped.values())

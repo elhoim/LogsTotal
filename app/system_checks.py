@@ -23,6 +23,7 @@ from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.docs_site import docs_url
+from app.tools.runtime import resolve_task_config
 
 PASS = "PASS"  # noqa: S105 - status label, not a credential
 WARN = "WARN"
@@ -550,9 +551,9 @@ def _workflow_task_sources(project_root: Path) -> list[tuple[str, list[dict]]]:
     for wf in sorted(wf_dir.glob("*.yml")):
         try:
             data = yaml_safe_load(wf.read_text(encoding="utf-8")) or {}
+            tasks = [resolve_task_config(task) for task in data.get("tasks") or []]
         except Exception:
             continue
-        tasks = data.get("tasks") or []
         if tasks:
             sources.append((wf.name, tasks))
     return sources
@@ -845,9 +846,9 @@ def _workflow_limits() -> tuple[int, int]:
         for wf in sorted((PROJECT_ROOT / "workflows").glob("*.yml")):
             try:
                 data = yaml_safe_load(wf.read_text(encoding="utf-8")) or {}
+                tasks = [resolve_task_config(task) for task in data.get("tasks") or []]
             except Exception:
                 continue
-            tasks = data.get("tasks") or []
             if tasks:
                 max_tools = max(max_tools, len(tasks))
             for t in tasks:

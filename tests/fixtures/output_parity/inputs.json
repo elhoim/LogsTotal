@@ -1,0 +1,1135 @@
+{
+  "zircolite_windows": {
+    "tool": "zircolite",
+    "records": [
+      {
+        "title": "Same title",
+        "id": "r1",
+        "rule_level": "high",
+        "count": 7,
+        "tags": [
+          "attack.execution",
+          "attack.t1059"
+        ],
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": [
+          {
+            "Timestamp": "2026-01-01T12:00:00Z",
+            "Computer": "HOST",
+            "EventID": 1,
+            "User": "LAB\\alice",
+            "Image": "C:\\Windows\\evil.exe",
+            "CommandLine": "evil.exe -enc c2VjcmV0",
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "ParentImage": "C:\\Windows\\cmd.exe",
+            "ProcessGuid": "child",
+            "ParentProcessGuid": "parent",
+            "SourceIp": "192.0.2.1",
+            "DestinationIp": "198.51.100.4",
+            "QueryName": "example.test",
+            "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "Timestamp": "2026-01-01T13:00:00Z",
+            "Computer": "HOST",
+            "EventID": 1,
+            "User": "LAB\\alice",
+            "Image": "C:\\Windows\\evil.exe",
+            "CommandLine": "evil.exe -enc c2VjcmV0",
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "ParentImage": "C:\\Windows\\cmd.exe",
+            "ProcessGuid": "child",
+            "ParentProcessGuid": "parent",
+            "SourceIp": "192.0.2.1",
+            "DestinationIp": "198.51.100.4",
+            "QueryName": "example.test",
+            "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      },
+      {
+        "title": "Same title",
+        "id": "r2",
+        "rule_level": "high",
+        "count": 0,
+        "tags": [
+          "attack.execution",
+          "attack.t1059"
+        ],
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": []
+      },
+      {
+        "title": "Same title",
+        "id": "r1",
+        "rule_level": "high",
+        "count": 3,
+        "tags": [
+          "attack.execution",
+          "attack.t1059"
+        ],
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": [
+          {
+            "Event": {
+              "System": {
+                "Computer": "HOST",
+                "EventID": 1,
+                "TimeCreated_attributes": {
+                  "SystemTime": "2026-01-01T12:00:00Z"
+                }
+              },
+              "EventData": {
+                "User": "LAB\\alice",
+                "Image": "C:\\Windows\\evil.exe",
+                "CommandLine": "evil.exe -enc c2VjcmV0",
+                "ProcessId": 100,
+                "ParentProcessId": 50,
+                "ParentImage": "C:\\Windows\\cmd.exe",
+                "ProcessGuid": "child",
+                "ParentProcessGuid": "parent",
+                "SourceIp": "192.0.2.1",
+                "DestinationIp": "198.51.100.4",
+                "QueryName": "example.test",
+                "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "zircolite_linux": {
+    "tool": "zircolite",
+    "records": [
+      {
+        "title": "Same title",
+        "id": "r1",
+        "rule_level": "high",
+        "count": 2,
+        "tags": [
+          "attack.execution",
+          "attack.t1059"
+        ],
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": [
+          {
+            "Timestamp": "audit(1767268800.123:42)",
+            "hostname": "linux",
+            "exe": "/usr/bin/curl",
+            "a0": "curl",
+            "a1": "https://example.test",
+            "pid": "200",
+            "ppid": "100",
+            "uid": "1000",
+            "acct": "alice",
+            "syscall": "59",
+            "addr": "198.51.100.4"
+          },
+          {
+            "Timestamp": "2026-01-01T12:00:00Z",
+            "_HOSTNAME": "journal",
+            "_EXE": "/usr/bin/bash",
+            "Image": "/usr/bin/bash",
+            "CommandLine": "bash -c whoami",
+            "host": "offline"
+          }
+        ]
+      }
+    ]
+  },
+  "zircolite_legacy_junk": {
+    "tool": "zircolite",
+    "records": [
+      null,
+      {},
+      {
+        "title": "Same title",
+        "id": "r1",
+        "rule_level": "high",
+        "count": "7",
+        "tags": "attack.execution",
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": "not-list"
+      },
+      {
+        "title": "Same title",
+        "id": "r1",
+        "rule_level": "high",
+        "count": 7,
+        "tags": [
+          "attack.execution",
+          "attack.t1059"
+        ],
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": null
+      },
+      {
+        "title": "Same title",
+        "id": "r1",
+        "rule_level": "high",
+        "count": 7,
+        "tags": [
+          "attack.execution",
+          "attack.t1059"
+        ],
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": [
+          {
+            "Timestamp": "2026-01-01T12:00:00Z",
+            "Computer": "HOST",
+            "EventID": 1,
+            "User": "LAB\\alice",
+            "Image": "C:\\Windows\\evil.exe",
+            "CommandLine": "evil.exe -enc c2VjcmV0",
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "ParentImage": "C:\\Windows\\cmd.exe",
+            "ProcessGuid": "child",
+            "ParentProcessGuid": "parent",
+            "SourceIp": "192.0.2.1",
+            "DestinationIp": "198.51.100.4",
+            "QueryName": "example.test",
+            "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "Timestamp": "2026-01-01T13:00:00Z",
+            "Computer": "HOST",
+            "EventID": 1,
+            "User": "LAB\\alice",
+            "Image": "C:\\Windows\\evil.exe",
+            "CommandLine": "evil.exe -enc c2VjcmV0",
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "ParentImage": "C:\\Windows\\cmd.exe",
+            "ProcessGuid": "child",
+            "ParentProcessGuid": "parent",
+            "SourceIp": "192.0.2.1",
+            "DestinationIp": "198.51.100.4",
+            "QueryName": "example.test",
+            "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    ]
+  },
+  "hayabusa_collisions": {
+    "tool": "hayabusa",
+    "records": [
+      {
+        "RuleTitle": "Same title",
+        "RuleID": "r1",
+        "Level": "high",
+        "MitreTags": "T1059, attack.execution",
+        "MitreTactics": "Exec",
+        "Timestamp": "2026-01-01 21:00:00 +09:00",
+        "Computer": "HOST",
+        "EventID": 1,
+        "Details": {
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "ExtraFieldInfo": {
+          "ParentImage": "C:\\Windows\\other.exe",
+          "UtcTime": "2026-01-01T12:00:00Z"
+        }
+      },
+      {
+        "RuleTitle": "Same title",
+        "RuleID": "r2",
+        "Level": "critical",
+        "MitreTags": "T1059, attack.execution",
+        "MitreTactics": "Exec",
+        "Timestamp": "2026-01-01 21:00:00 +09:00",
+        "Computer": "HOST2",
+        "EventID": 1,
+        "Details": {
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "ExtraFieldInfo": {
+          "ParentImage": "C:\\Windows\\other.exe",
+          "UtcTime": "2026-01-01T12:00:00Z"
+        }
+      },
+      {
+        "RuleTitle": "Other",
+        "RuleID": "r3",
+        "Level": "med",
+        "MitreTags": [
+          "T1059",
+          "attack.defense_evasion"
+        ],
+        "MitreTactics": "Exec",
+        "Timestamp": "2026-01-01 21:00:00 +09:00",
+        "Computer": "HOST",
+        "EventID": 1,
+        "Details": {
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "ExtraFieldInfo": {
+          "ParentImage": "C:\\Windows\\other.exe",
+          "UtcTime": "2026-01-01T12:00:00Z"
+        }
+      }
+    ]
+  },
+  "hayabusa_fallbacks": {
+    "tool": "hayabusa",
+    "records": [
+      null,
+      {},
+      {
+        "RuleTitle": "",
+        "RuleID": "",
+        "Level": "high",
+        "MitreTags": "T1059, attack.execution",
+        "MitreTactics": "Exec",
+        "Timestamp": "2026-01-01 21:00:00 +09:00",
+        "Computer": "HOST",
+        "EventID": 1,
+        "Details": {
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "ExtraFieldInfo": {
+          "ParentImage": "C:\\Windows\\other.exe",
+          "UtcTime": "2026-01-01T12:00:00Z"
+        },
+        "RuleFile": "r1",
+        "Channel": "Security"
+      },
+      {
+        "RuleTitle": "Same title",
+        "RuleID": "r1",
+        "Level": " high ",
+        "MitreTags": null,
+        "MitreTactics": "Exec",
+        "Timestamp": null,
+        "Computer": "HOST",
+        "EventID": 1,
+        "Details": {
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "ExtraFieldInfo": {
+          "ParentImage": "C:\\Windows\\other.exe",
+          "UtcTime": "2026-01-01T12:00:00Z"
+        }
+      }
+    ]
+  },
+  "chainsaw_wrapped": {
+    "tool": "chainsaw",
+    "records": [
+      {
+        "name": "Same title",
+        "id": "r1",
+        "level": "high",
+        "timestamp": "2026-01-01T12:00:00Z",
+        "tags": [
+          "attack.execution"
+        ],
+        "document": {
+          "kind": "evtx",
+          "path": "sample.evtx",
+          "data": {
+            "Event": {
+              "System": {
+                "Computer": "HOST",
+                "EventID": 1,
+                "TimeCreated_attributes": {
+                  "SystemTime": "2026-01-01T12:00:00Z"
+                }
+              },
+              "EventData": {
+                "User": "LAB\\alice",
+                "Image": "C:\\Windows\\evil.exe",
+                "CommandLine": "evil.exe -enc c2VjcmV0",
+                "ProcessId": 100,
+                "ParentProcessId": 50,
+                "ParentImage": "C:\\Windows\\cmd.exe",
+                "ProcessGuid": "child",
+                "ParentProcessGuid": "parent",
+                "SourceIp": "192.0.2.1",
+                "DestinationIp": "198.51.100.4",
+                "QueryName": "example.test",
+                "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Same title",
+        "id": "r2",
+        "level": "critical",
+        "timestamp": "2026-01-01T12:00:00Z",
+        "tags": [
+          "attack.execution"
+        ],
+        "document": {
+          "kind": "evtx",
+          "path": "sample.evtx",
+          "data": {
+            "Event": {
+              "System": {
+                "Computer": "HOST",
+                "EventID": 1,
+                "TimeCreated_attributes": {
+                  "SystemTime": "2026-01-01T12:00:00Z"
+                }
+              },
+              "EventData": {
+                "User": "LAB\\alice",
+                "Image": "C:\\Windows\\evil.exe",
+                "CommandLine": "evil.exe -enc c2VjcmV0",
+                "ProcessId": 100,
+                "ParentProcessId": 50,
+                "ParentImage": "C:\\Windows\\cmd.exe",
+                "ProcessGuid": "child",
+                "ParentProcessGuid": "parent",
+                "SourceIp": "192.0.2.1",
+                "DestinationIp": "198.51.100.4",
+                "QueryName": "example.test",
+                "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      },
+      {
+        "name": "Other",
+        "id": "r1",
+        "level": "high",
+        "timestamp": "2026-01-01T12:00:00Z",
+        "tags": [
+          "attack.execution"
+        ],
+        "document": {
+          "Timestamp": "2026-01-01T12:00:00Z",
+          "Computer": "HOST",
+          "EventID": 1,
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    ]
+  },
+  "chainsaw_legacy_junk": {
+    "tool": "chainsaw",
+    "records": [
+      null,
+      {},
+      {
+        "name": "Same title",
+        "id": "r1",
+        "level": "high",
+        "timestamp": "2026-01-01T12:00:00Z",
+        "tags": "attack.execution",
+        "document": null
+      },
+      {
+        "name": "Same title",
+        "id": "r1",
+        "level": null,
+        "timestamp": "2026-01-01T12:00:00Z",
+        "tags": [
+          "attack.execution"
+        ],
+        "document": "junk"
+      },
+      {
+        "name": "",
+        "id": "r1",
+        "level": "high",
+        "timestamp": "2026-01-01T12:00:00Z",
+        "tags": [
+          "attack.execution"
+        ],
+        "document": {
+          "Event": {}
+        },
+        "group": "fallback"
+      }
+    ]
+  },
+  "chopchopgo_syslog": {
+    "tool": "chopchopgo",
+    "records": [
+      {
+        "Title": "Same title",
+        "ID": "r1",
+        "Timestamp": "2026-01-01T12:00:00Z",
+        "Message": "service started",
+        "User": "alice",
+        "Exe": "/usr/bin/curl",
+        "PID": "200",
+        "Tags": [
+          "attack.execution"
+        ]
+      },
+      {
+        "Title": "Same title",
+        "ID": "r2",
+        "Timestamp": "2026-01-01T12:00:00Z",
+        "Message": "service started",
+        "User": "bob",
+        "Exe": "/usr/bin/curl",
+        "PID": "200",
+        "Tags": [
+          "attack.execution"
+        ]
+      },
+      {
+        "Title": "Other",
+        "ID": "missing",
+        "Timestamp": "2026-01-01T12:00:00Z",
+        "Message": "service started",
+        "User": "alice",
+        "Exe": "/usr/bin/curl",
+        "PID": "200",
+        "Tags": "attack.discovery"
+      }
+    ]
+  },
+  "rsigma_windows": {
+    "tool": "rsigma",
+    "records": [
+      {
+        "rule_title": "Same title",
+        "rule_id": "r1",
+        "level": "high",
+        "tags": [
+          "attack.execution"
+        ],
+        "event": {
+          "Event": {
+            "System": {
+              "Computer": "HOST",
+              "EventID": 1,
+              "TimeCreated_attributes": {
+                "SystemTime": "2026-01-01T12:00:00Z"
+              }
+            },
+            "EventData": {
+              "User": "LAB\\alice",
+              "Image": "C:\\Windows\\evil.exe",
+              "CommandLine": "evil.exe -enc c2VjcmV0",
+              "ProcessId": 100,
+              "ParentProcessId": 50,
+              "ParentImage": "C:\\Windows\\cmd.exe",
+              "ProcessGuid": "child",
+              "ParentProcessGuid": "parent",
+              "SourceIp": "192.0.2.1",
+              "DestinationIp": "198.51.100.4",
+              "QueryName": "example.test",
+              "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      },
+      {
+        "rule_title": "Same title",
+        "rule_id": "r1",
+        "level": "high",
+        "tags": [
+          "attack.execution"
+        ],
+        "event": {
+          "Event": {
+            "System": {
+              "Computer": "HOST",
+              "EventID": 1,
+              "TimeCreated_attributes": {
+                "SystemTime": "2026-01-01T12:00:00Z"
+              }
+            },
+            "EventData": {
+              "User": "LAB\\alice",
+              "Image": "C:\\Windows\\evil.exe",
+              "CommandLine": "evil.exe -enc c2VjcmV0",
+              "ProcessId": 100,
+              "ParentProcessId": 50,
+              "ParentImage": "C:\\Windows\\cmd.exe",
+              "ProcessGuid": "child",
+              "ParentProcessGuid": "parent",
+              "SourceIp": "192.0.2.1",
+              "DestinationIp": "198.51.100.4",
+              "QueryName": "example.test",
+              "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      },
+      {
+        "rule_title": "Same title",
+        "rule_id": "r2",
+        "level": "critical",
+        "tags": [
+          "attack.execution"
+        ],
+        "event": {
+          "Event": {
+            "System": {
+              "Computer": "HOST",
+              "EventID": 1,
+              "TimeCreated_attributes": {
+                "SystemTime": "2026-01-01T12:00:00Z"
+              }
+            },
+            "EventData": {
+              "User": "LAB\\alice",
+              "Image": "C:\\Windows\\evil.exe",
+              "CommandLine": "evil.exe -enc c2VjcmV0",
+              "ProcessId": 100,
+              "ParentProcessId": 50,
+              "ParentImage": "C:\\Windows\\cmd.exe",
+              "ProcessGuid": "child",
+              "ParentProcessGuid": "parent",
+              "SourceIp": "192.0.2.1",
+              "DestinationIp": "198.51.100.4",
+              "QueryName": "example.test",
+              "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      },
+      {
+        "rule_title": "Fallback",
+        "rule_id": "",
+        "level": "high",
+        "tags": [
+          "attack.execution"
+        ],
+        "event": {
+          "Timestamp": "2026-01-01T12:00:00Z",
+          "Computer": "HOST",
+          "EventID": 1,
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    ]
+  },
+  "rsigma_ecs": {
+    "tool": "rsigma",
+    "records": [
+      {
+        "rule_title": "Same title",
+        "rule_id": "r1",
+        "level": "high",
+        "tags": [
+          "attack.execution"
+        ],
+        "event": {
+          "@timestamp": "2026-01-01T12:00:00Z",
+          "host": {
+            "name": "HOST"
+          },
+          "winlog": {
+            "event_id": 1,
+            "event_data": {
+              "User": "native\\alice",
+              "Image": "native.exe"
+            }
+          },
+          "user": {
+            "name": "ecs-user"
+          },
+          "process": {
+            "executable": "ecs.exe",
+            "pid": 10,
+            "parent": {
+              "pid": 2
+            }
+          },
+          "destination.ip": "198.51.100.4"
+        }
+      },
+      {
+        "rule_title": "Same title",
+        "rule_id": "r2",
+        "level": "high",
+        "tags": [
+          "attack.execution"
+        ],
+        "event": {
+          "EventID": 4688,
+          "_logstotal_source": "Security:4688",
+          "ProcessId": "300",
+          "ParentProcessId": "200",
+          "Image": "evil.exe",
+          "Timestamp": "2026-01-01T12:00:00Z"
+        }
+      }
+    ]
+  },
+  "zircolite_zero_details": {
+    "tool": "zircolite",
+    "cap": 0,
+    "records": [
+      {
+        "title": "Same title",
+        "id": "r1",
+        "rule_level": "high",
+        "count": 7,
+        "tags": [
+          "attack.execution",
+          "attack.t1059"
+        ],
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": [
+          {
+            "Timestamp": "2026-01-01T12:00:00Z",
+            "Computer": "HOST",
+            "EventID": 1,
+            "User": "LAB\\alice",
+            "Image": "C:\\Windows\\evil.exe",
+            "CommandLine": "evil.exe -enc c2VjcmV0",
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "ParentImage": "C:\\Windows\\cmd.exe",
+            "ProcessGuid": "child",
+            "ParentProcessGuid": "parent",
+            "SourceIp": "192.0.2.1",
+            "DestinationIp": "198.51.100.4",
+            "QueryName": "example.test",
+            "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "Timestamp": "2026-01-01T13:00:00Z",
+            "Computer": "HOST",
+            "EventID": 1,
+            "User": "LAB\\alice",
+            "Image": "C:\\Windows\\evil.exe",
+            "CommandLine": "evil.exe -enc c2VjcmV0",
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "ParentImage": "C:\\Windows\\cmd.exe",
+            "ProcessGuid": "child",
+            "ParentProcessGuid": "parent",
+            "SourceIp": "192.0.2.1",
+            "DestinationIp": "198.51.100.4",
+            "QueryName": "example.test",
+            "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    ]
+  },
+  "zircolite_negative_details": {
+    "tool": "zircolite",
+    "cap": -1,
+    "records": [
+      {
+        "title": "Same title",
+        "id": "r1",
+        "rule_level": "high",
+        "count": 7,
+        "tags": [
+          "attack.execution",
+          "attack.t1059"
+        ],
+        "sigma": [
+          "select * from logs;"
+        ],
+        "matches": [
+          {
+            "Timestamp": "2026-01-01T12:00:00Z",
+            "Computer": "HOST",
+            "EventID": 1,
+            "User": "LAB\\alice",
+            "Image": "C:\\Windows\\evil.exe",
+            "CommandLine": "evil.exe -enc c2VjcmV0",
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "ParentImage": "C:\\Windows\\cmd.exe",
+            "ProcessGuid": "child",
+            "ParentProcessGuid": "parent",
+            "SourceIp": "192.0.2.1",
+            "DestinationIp": "198.51.100.4",
+            "QueryName": "example.test",
+            "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "Timestamp": "2026-01-01T13:00:00Z",
+            "Computer": "HOST",
+            "EventID": 1,
+            "User": "LAB\\alice",
+            "Image": "C:\\Windows\\evil.exe",
+            "CommandLine": "evil.exe -enc c2VjcmV0",
+            "ProcessId": 100,
+            "ParentProcessId": 50,
+            "ParentImage": "C:\\Windows\\cmd.exe",
+            "ProcessGuid": "child",
+            "ParentProcessGuid": "parent",
+            "SourceIp": "192.0.2.1",
+            "DestinationIp": "198.51.100.4",
+            "QueryName": "example.test",
+            "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    ]
+  },
+  "hayabusa_zero_details": {
+    "tool": "hayabusa",
+    "cap": 0,
+    "records": [
+      {
+        "RuleTitle": "Same title",
+        "RuleID": "r1",
+        "Level": "high",
+        "MitreTags": "T1059, attack.execution",
+        "MitreTactics": "Exec",
+        "Timestamp": "2026-01-01 21:00:00 +09:00",
+        "Computer": "HOST",
+        "EventID": 1,
+        "Details": {
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "ExtraFieldInfo": {
+          "ParentImage": "C:\\Windows\\other.exe",
+          "UtcTime": "2026-01-01T12:00:00Z"
+        }
+      }
+    ]
+  },
+  "hayabusa_negative_details": {
+    "tool": "hayabusa",
+    "cap": -1,
+    "records": [
+      {
+        "RuleTitle": "Same title",
+        "RuleID": "r1",
+        "Level": "high",
+        "MitreTags": "T1059, attack.execution",
+        "MitreTactics": "Exec",
+        "Timestamp": "2026-01-01 21:00:00 +09:00",
+        "Computer": "HOST",
+        "EventID": 1,
+        "Details": {
+          "User": "LAB\\alice",
+          "Image": "C:\\Windows\\evil.exe",
+          "CommandLine": "evil.exe -enc c2VjcmV0",
+          "ProcessId": 100,
+          "ParentProcessId": 50,
+          "ParentImage": "C:\\Windows\\cmd.exe",
+          "ProcessGuid": "child",
+          "ParentProcessGuid": "parent",
+          "SourceIp": "192.0.2.1",
+          "DestinationIp": "198.51.100.4",
+          "QueryName": "example.test",
+          "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "ExtraFieldInfo": {
+          "ParentImage": "C:\\Windows\\other.exe",
+          "UtcTime": "2026-01-01T12:00:00Z"
+        }
+      }
+    ]
+  },
+  "chainsaw_zero_details": {
+    "tool": "chainsaw",
+    "cap": 0,
+    "records": [
+      {
+        "name": "Same title",
+        "id": "r1",
+        "level": "high",
+        "timestamp": "2026-01-01T12:00:00Z",
+        "tags": [
+          "attack.execution"
+        ],
+        "document": {
+          "kind": "evtx",
+          "path": "sample.evtx",
+          "data": {
+            "Event": {
+              "System": {
+                "Computer": "HOST",
+                "EventID": 1,
+                "TimeCreated_attributes": {
+                  "SystemTime": "2026-01-01T12:00:00Z"
+                }
+              },
+              "EventData": {
+                "User": "LAB\\alice",
+                "Image": "C:\\Windows\\evil.exe",
+                "CommandLine": "evil.exe -enc c2VjcmV0",
+                "ProcessId": 100,
+                "ParentProcessId": 50,
+                "ParentImage": "C:\\Windows\\cmd.exe",
+                "ProcessGuid": "child",
+                "ParentProcessGuid": "parent",
+                "SourceIp": "192.0.2.1",
+                "DestinationIp": "198.51.100.4",
+                "QueryName": "example.test",
+                "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "chainsaw_negative_details": {
+    "tool": "chainsaw",
+    "cap": -1,
+    "records": [
+      {
+        "name": "Same title",
+        "id": "r1",
+        "level": "high",
+        "timestamp": "2026-01-01T12:00:00Z",
+        "tags": [
+          "attack.execution"
+        ],
+        "document": {
+          "kind": "evtx",
+          "path": "sample.evtx",
+          "data": {
+            "Event": {
+              "System": {
+                "Computer": "HOST",
+                "EventID": 1,
+                "TimeCreated_attributes": {
+                  "SystemTime": "2026-01-01T12:00:00Z"
+                }
+              },
+              "EventData": {
+                "User": "LAB\\alice",
+                "Image": "C:\\Windows\\evil.exe",
+                "CommandLine": "evil.exe -enc c2VjcmV0",
+                "ProcessId": 100,
+                "ParentProcessId": 50,
+                "ParentImage": "C:\\Windows\\cmd.exe",
+                "ProcessGuid": "child",
+                "ParentProcessGuid": "parent",
+                "SourceIp": "192.0.2.1",
+                "DestinationIp": "198.51.100.4",
+                "QueryName": "example.test",
+                "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "chopchopgo_zero_details": {
+    "tool": "chopchopgo",
+    "cap": 0,
+    "records": [
+      {
+        "Title": "Same title",
+        "ID": "r1",
+        "Timestamp": "2026-01-01T12:00:00Z",
+        "Message": "service started",
+        "User": "alice",
+        "Exe": "/usr/bin/curl",
+        "PID": "200",
+        "Tags": [
+          "attack.execution"
+        ]
+      }
+    ]
+  },
+  "chopchopgo_negative_details": {
+    "tool": "chopchopgo",
+    "cap": -1,
+    "records": [
+      {
+        "Title": "Same title",
+        "ID": "r1",
+        "Timestamp": "2026-01-01T12:00:00Z",
+        "Message": "service started",
+        "User": "alice",
+        "Exe": "/usr/bin/curl",
+        "PID": "200",
+        "Tags": [
+          "attack.execution"
+        ]
+      }
+    ]
+  },
+  "rsigma_zero_details": {
+    "tool": "rsigma",
+    "cap": 0,
+    "records": [
+      {
+        "rule_title": "Same title",
+        "rule_id": "r1",
+        "level": "high",
+        "tags": [
+          "attack.execution"
+        ],
+        "event": {
+          "Event": {
+            "System": {
+              "Computer": "HOST",
+              "EventID": 1,
+              "TimeCreated_attributes": {
+                "SystemTime": "2026-01-01T12:00:00Z"
+              }
+            },
+            "EventData": {
+              "User": "LAB\\alice",
+              "Image": "C:\\Windows\\evil.exe",
+              "CommandLine": "evil.exe -enc c2VjcmV0",
+              "ProcessId": 100,
+              "ParentProcessId": 50,
+              "ParentImage": "C:\\Windows\\cmd.exe",
+              "ProcessGuid": "child",
+              "ParentProcessGuid": "parent",
+              "SourceIp": "192.0.2.1",
+              "DestinationIp": "198.51.100.4",
+              "QueryName": "example.test",
+              "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      }
+    ]
+  },
+  "rsigma_negative_details": {
+    "tool": "rsigma",
+    "cap": -1,
+    "records": [
+      {
+        "rule_title": "Same title",
+        "rule_id": "r1",
+        "level": "high",
+        "tags": [
+          "attack.execution"
+        ],
+        "event": {
+          "Event": {
+            "System": {
+              "Computer": "HOST",
+              "EventID": 1,
+              "TimeCreated_attributes": {
+                "SystemTime": "2026-01-01T12:00:00Z"
+              }
+            },
+            "EventData": {
+              "User": "LAB\\alice",
+              "Image": "C:\\Windows\\evil.exe",
+              "CommandLine": "evil.exe -enc c2VjcmV0",
+              "ProcessId": 100,
+              "ParentProcessId": 50,
+              "ParentImage": "C:\\Windows\\cmd.exe",
+              "ProcessGuid": "child",
+              "ParentProcessGuid": "parent",
+              "SourceIp": "192.0.2.1",
+              "DestinationIp": "198.51.100.4",
+              "QueryName": "example.test",
+              "Hashes": "SHA256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

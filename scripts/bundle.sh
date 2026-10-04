@@ -48,9 +48,16 @@ bundle_images() {
     docker-compose.yml docker-compose.worker.yml 2>/dev/null |
     sed -e 's/.*image: //' -e 's/^\${[^}]*}//' |
     grep -v '^logstotal' | grep -v '\${'
-  # Tool images from the workflow definitions. Zircolite is pinned by digest, and the
-  # digest is what must be saved: a tag can move, and an air-gapped host cannot check.
-  grep -hoE 'docker_image:\s*\S+' workflows/*.yml 2>/dev/null | sed 's/docker_image:[[:space:]]*//'
+  # Catalog profile defaults plus custom workflow image overrides. This helper uses
+  # only the standard library, so bundles can be built before application install.
+  if [ -f scripts/tool_runtime_inventory.py ]; then
+    python3 scripts/tool_runtime_inventory.py --images
+  else
+    # Releases from before profile support contain explicit workflow images only.
+    # Native-only workflows legitimately have no matches; actual read errors fail.
+    { grep -hoE 'docker_image:\s*\S+' workflows/*.yml 2>/dev/null || [ "$?" -eq 1 ]; } |
+      sed 's/docker_image:[[:space:]]*//'
+  fi
 }
 
 # save_ref_for REF — the reference to `docker save`, given the one a workflow names.
@@ -165,7 +172,10 @@ do_build() {
 
   # ── Everything else it needs ───────────────────────────────────────────────
   header "3/4: the images it pulls at runtime"
-  local manifest_images=() image saved i=0
+  local manifest_images=() image saved runtime_images i=0
+  # Capture before entering the loop so an inventory failure propagates under
+  # pipefail; a failed process substitution would otherwise leave only compose images.
+  runtime_images=$(cd "$source_tree" && bundle_images | sort -u)
   while IFS= read -r image; do
     [ -n "$image" ] || continue
     info "docker pull ${image}"
@@ -181,7 +191,7 @@ do_build() {
     fi
     docker save "$saved" -o "${work}/images/third-party-${i}.tar"
     manifest_images+=("$saved")
-  done < <((cd "$source_tree" && bundle_images) | sort -u)
+  done <<< "$runtime_images"
 
   # A bundle with no runtime images is the precise failure this whole thing exists to
   # prevent — an install that passes every check and then cannot analyse a Windows log.

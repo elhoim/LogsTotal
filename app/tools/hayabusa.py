@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
 
-from app.tools.base import NormalizedFinding, ToolAdapter
+from app.tools.base import ToolAdapter
 from app.tools.catalog import TOOLS
-from app.tools.output import RawMatch, event_timestamp, json_records
+from app.tools.mapping import MetadataMapping, OutputMapping, Selector, csv_tags
 
 _log = logging.getLogger(__name__)
 
@@ -43,18 +42,26 @@ class HayabusaAdapter(ToolAdapter):
     """
 
     name = "hayabusa"
+    output_mapping = OutputMapping(
+        finding=MetadataMapping(
+            rule_name=Selector((("RuleTitle",), ("Channel",)), default="Unknown Rule", transforms=(str,)),
+            rule_id=Selector((("RuleID",), ("RuleFile",)), default="", transforms=(str,)),
+            severity=Selector((("Level",),), default="informational", fallback="missing"),
+            tags=Selector((("MitreTags",),), default="", fallback="missing", transforms=(csv_tags,)),
+        ),
+        raw_overrides={
+            "rule_name": Selector((("RuleTitle",),), default="", fallback="missing"),
+            "rule_id": Selector((("RuleID",),), default="", fallback="missing"),
+            "severity": Selector((("Level",),), fallback="missing"),
+            "tags": Selector(default=[]),
+        },
+        format="jsonl",
+        detail_projection=lambda event: {key: event.get(key) for key in ("Timestamp", "Computer", "EventID", "Details")},
+    )
 
     SUPPORTED_TYPES = TOOLS["hayabusa"].supported_types
 
-    @classmethod
-    def iter_raw_matches(cls, path: Path):
-        for event in json_records(path, jsonl=True):
-            yield RawMatch(event, event.get("RuleTitle", ""), event.get("RuleID", ""), event.get("Level"), timestamp=event_timestamp(event))
-
     # ── subclass hooks ───────────────────────────────────────────────────
-
-    def _output_filename(self, file_path: Path) -> str:
-        return file_path.stem + TOOLS["hayabusa"].output_suffix
 
     def _core_args(
         self,
@@ -126,64 +133,3 @@ class HayabusaAdapter(ToolAdapter):
         container_out: str,
     ) -> list[str]:
         return self._core_args(container_log, container_out, container_rules)
-
-    def _load_output(self, path: Path) -> Any:
-        return self._load_jsonl(path)
-
-    # ── normalize ────────────────────────────────────────────────────────
-
-    def normalize(self, raw: Any) -> list[NormalizedFinding]:
-        """
-        Hayabusa NDJSON format per event:
-        {"Timestamp": "…", "Level": "high", "RuleTitle": "…",
-         "RuleID": "…", "MitreTags": "T1234", "Details": {…}}
-
-        Group by RuleTitle to aggregate.
-        """
-        grouped: dict[str, NormalizedFinding] = {}
-        skipped = 0
-
-        for event in self._dict_records(raw):
-            try:
-                rule_name = str(event.get("RuleTitle") or event.get("Channel") or "Unknown Rule")
-                level = self._normalize_severity(event.get("Level", "informational"))
-                rule_id = str(event.get("RuleID") or event.get("RuleFile") or "")
-                mitre = event.get("MitreTags", "")
-                if isinstance(mitre, list):
-                    tags = [str(t).strip() for t in mitre if t]
-                elif mitre:
-                    tags = [t.strip() for t in str(mitre).split(",") if t.strip()]
-                else:
-                    tags = []
-
-                if rule_name not in grouped:
-                    grouped[rule_name] = NormalizedFinding(
-                        rule_name=rule_name,
-                        severity=level,
-                        count=0,
-                        rule_id=rule_id,
-                        tags=tags,
-                        details=[],
-                        rule_content=self._lookup_rule_yaml(rule_id) if rule_id else "",
-                    )
-
-                entry = grouped[rule_name]
-                entry.count += 1
-                if len(entry.details) < self.max_details:
-                    entry.details.append(
-                        {
-                            "Timestamp": event.get("Timestamp"),
-                            "Computer": event.get("Computer"),
-                            "EventID": event.get("EventID"),
-                            "Details": event.get("Details"),
-                        }
-                    )
-            except Exception:
-                # Per-record isolation: one unexpected shape must not discard the rest of
-                # the file. `run()` catches around all of `normalize()`, so an escape here
-                # is reported as "0 findings".
-                skipped += 1
-
-        if skipped:
-            _log.warning("hayabusa: skipped %d unparseable event(s)", skipped)
-        return list(grouped.values())

@@ -13,6 +13,7 @@ from typing import Any, TypeVar
 import yaml
 
 from app.json_utils import loads as json_loads
+from app.tools.runtime import resolve_task_config
 from app.yaml_utils import safe_load as yaml_safe_load
 
 _log = logging.getLogger(__name__)
@@ -85,12 +86,15 @@ def parse_workflow_yaml(tasks_yaml: str) -> list[dict[str, Any]]:
     tasks = data.get("tasks", [])
     if not isinstance(tasks, list):
         raise ValueError("Workflow 'tasks' must be a list.")
+    resolved_tasks = []
     for task in tasks:
         if not isinstance(task, dict):
             raise ValueError("Each workflow task must be an object.")
+        task = resolve_task_config(task)
         _normalize_task_timeout(task)
         _validate_task_config(task)
-    return tasks
+        resolved_tasks.append(task)
+    return resolved_tasks
 
 
 def get_compatible_workflows(

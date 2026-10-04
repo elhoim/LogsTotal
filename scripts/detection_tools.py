@@ -27,6 +27,8 @@ from pathlib import Path
 # This script also runs before PDM is installed. The catalog has no app imports.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.tools.catalog import TOOLS
+from app.tools.runtime import resolve_task_config
+from scripts.tool_runtime_inventory import workflow_task_scalars
 
 REPOS = {name: spec.repo for name, spec in TOOLS.items()}
 RULE_REPOS = {name: spec.rule_repo for name, spec in TOOLS.items()}
@@ -159,7 +161,12 @@ def local_version(root: Path, tool: str) -> str:
     if tool == "zircolite":
         versions = set()
         for workflow in (root / "workflows").glob("*.yml"):
-            versions.update(re.findall(r"wagga40/zircolite:(\d+\.\d+\.\d+)", workflow.read_text()))
+            content = workflow.read_text()
+            versions.update(re.findall(r"wagga40/zircolite:(\d+\.\d+\.\d+)", content))
+            for task in workflow_task_scalars(content):
+                if task.get("tool") == "zircolite" and "profile" in task:
+                    image = resolve_task_config(task).get("docker_image", "")
+                    versions.update(re.findall(r"wagga40/zircolite:(\d+\.\d+\.\d+)", image or ""))
         if len(versions) > 1:
             raise ValueError("inconsistent Zircolite versions in workflows")
         return next(iter(versions), "")
@@ -337,7 +344,7 @@ def update(root: Path, tool: str, allow_major: bool) -> None:
         backup = install(root, tool, stage)
     print(f"Installed {tool} rules" + (" and binaries" if hashes else "") + f"; previous files: {backup}")
     if tool == "zircolite":
-        print(f"Container pin unchanged. Resolve and test wagga40/zircolite:{want.removeprefix('v')} before updating workflows/*.yml.")
+        print(f"Container pin unchanged. Resolve and test wagga40/zircolite:{want.removeprefix('v')} before updating app/tools/catalog.py (or a workflow override).")
     print("Run the affected sample workflows and compare named findings before deploying.")
 
 

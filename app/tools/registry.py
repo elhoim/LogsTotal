@@ -5,6 +5,7 @@ from typing import Any
 
 from app.tools.base import ToolAdapter
 from app.tools.catalog import TOOLS
+from app.tools.runtime import resolve_task_config
 
 
 def get_adapter_class(tool_name: str) -> type[ToolAdapter]:
@@ -16,4 +17,4 @@ def get_adapter_class(tool_name: str) -> type[ToolAdapter]:
 
 
 def get_adapter(tool_name: str, config: dict[str, Any]) -> ToolAdapter:
-    return get_adapter_class(tool_name)(config)
+    return get_adapter_class(tool_name)(resolve_task_config(config, tool_name))

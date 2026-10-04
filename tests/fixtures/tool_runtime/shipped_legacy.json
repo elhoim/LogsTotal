@@ -1,0 +1,607 @@
+{
+  "linux_auditd.yml": {
+    "tasks": [
+      {
+        "tool": "zircolite",
+        "docker_image": "wagga40/zircolite:4.0.0@sha256:552f1900fb5533a58fdad1ae61f46c09018271787d5d7a2d08cb318d3221461f",
+        "rules_path": "tools/zircolite/rules/rules_linux.json",
+        "timeout": 300,
+        "extra_args": [],
+        "docker_options": []
+      }
+    ],
+    "commands": [
+      {
+        "auditd": {
+          "docker_args": [
+            "-e",
+            "/case/input.log",
+            "-r",
+            "/rules/rules_linux.json",
+            "-o",
+            "/out/result.json",
+            "-AU"
+          ]
+        }
+      }
+    ]
+  },
+  "linux_journald.yml": {
+    "tasks": [
+      {
+        "tool": "zircolite",
+        "docker_image": "wagga40/zircolite:4.0.0@sha256:552f1900fb5533a58fdad1ae61f46c09018271787d5d7a2d08cb318d3221461f",
+        "rules_path": "tools/zircolite/rules/rules_linux.json",
+        "timeout": 300,
+        "options": {
+          "config": "zircolite_journald.yaml"
+        },
+        "extra_args": [],
+        "docker_options": []
+      }
+    ],
+    "commands": [
+      {
+        "journald": {
+          "docker_args": [
+            "-e",
+            "/case/input.log",
+            "-r",
+            "/rules/rules_linux.json",
+            "-o",
+            "/out/result.json",
+            "-j",
+            "-c",
+            "/rules/zircolite_journald.yaml"
+          ]
+        }
+      }
+    ]
+  },
+  "linux_syslog.yml": {
+    "tasks": [
+      {
+        "tool": "chopchopgo",
+        "tool_path": {
+          "x86_64-linux": "tools/chopchopgo/chopchopgo-intel-lin",
+          "aarch64-linux": "tools/chopchopgo/chopchopgo-arm-lin"
+        },
+        "rules_path": "tools/chopchopgo/rules/builtin",
+        "timeout": 300,
+        "extra_args": [],
+        "docker_options": []
+      }
+    ],
+    "commands": [
+      {
+        "syslog": {
+          "local_commands": {
+            "x86_64-linux": [
+              "tools/chopchopgo/chopchopgo-intel-lin",
+              "-target",
+              "syslog",
+              "-rules",
+              "<ROOT>/tools/chopchopgo/rules/builtin",
+              "-file",
+              "/case/input.log",
+              "-out",
+              "json",
+              "-mapping",
+              "tools/chopchopgo/mappings/syslog.yml"
+            ],
+            "aarch64-linux": [
+              "tools/chopchopgo/chopchopgo-arm-lin",
+              "-target",
+              "syslog",
+              "-rules",
+              "<ROOT>/tools/chopchopgo/rules/builtin",
+              "-file",
+              "/case/input.log",
+              "-out",
+              "json",
+              "-mapping",
+              "tools/chopchopgo/mappings/syslog.yml"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "linux_sysmon.yml": {
+    "tasks": [
+      {
+        "tool": "zircolite",
+        "docker_image": "wagga40/zircolite:4.0.0@sha256:552f1900fb5533a58fdad1ae61f46c09018271787d5d7a2d08cb318d3221461f",
+        "rules_path": "tools/zircolite/rules/rules_linux.json",
+        "timeout": 300,
+        "extra_args": [],
+        "docker_options": []
+      }
+    ],
+    "commands": [
+      {
+        "sysmon_linux": {
+          "docker_args": [
+            "-e",
+            "/case/input.log",
+            "-r",
+            "/rules/rules_linux.json",
+            "-o",
+            "/out/result.json",
+            "-S"
+          ]
+        }
+      }
+    ]
+  },
+  "windows_full.yml": {
+    "tasks": [
+      {
+        "tool": "hayabusa",
+        "tool_path": {
+          "x86_64-linux": "tools/hayabusa/hayabusa-intel-lin",
+          "aarch64-linux": "tools/hayabusa/hayabusa-arm-lin",
+          "aarch64-darwin": "tools/hayabusa/hayabusa-mac"
+        },
+        "rules_path": "tools/hayabusa/rules/",
+        "timeout": 300,
+        "threads": 2,
+        "extra_args": [],
+        "docker_options": []
+      },
+      {
+        "tool": "chainsaw",
+        "tool_path": {
+          "x86_64-linux": "tools/chainsaw/chainsaw-intel-lin",
+          "aarch64-linux": "tools/chainsaw/chainsaw-arm-lin",
+          "aarch64-darwin": "tools/chainsaw/chainsaw-mac"
+        },
+        "rules_path": [
+          "tools/chainsaw/sigma/rules",
+          "tools/chainsaw/sigma/rules-emerging-threats",
+          "tools/chainsaw/sigma/rules-threat-hunting"
+        ],
+        "timeout": 300,
+        "threads": 2,
+        "extra_args": [],
+        "docker_options": []
+      },
+      {
+        "tool": "zircolite",
+        "docker_image": "wagga40/zircolite:4.0.0@sha256:552f1900fb5533a58fdad1ae61f46c09018271787d5d7a2d08cb318d3221461f",
+        "rules_path": "tools/zircolite/rules/rules_windows_merged.json",
+        "timeout": 300,
+        "extra_args": [],
+        "docker_options": []
+      },
+      {
+        "tool": "rsigma",
+        "tool_path": {
+          "x86_64-linux": "tools/rsigma/rsigma-intel-lin",
+          "aarch64-linux": "tools/rsigma/rsigma-arm-lin",
+          "aarch64-darwin": "tools/rsigma/rsigma-mac"
+        },
+        "rules_path": "tools/rsigma/rules/",
+        "timeout": 300,
+        "extra_args": [],
+        "docker_options": []
+      }
+    ],
+    "commands": [
+      {
+        "evtx": {
+          "local_commands": {
+            "x86_64-linux": [
+              "tools/hayabusa/hayabusa-intel-lin",
+              "dfir-timeline",
+              "-f",
+              "/case/input.log",
+              "-o",
+              "/out/result.json",
+              "-r",
+              "tools/hayabusa/rules",
+              "-q",
+              "--no-wizard",
+              "--output-type",
+              "jsonl",
+              "-p",
+              "super-verbose",
+              "-K",
+              "--threads",
+              "2"
+            ],
+            "aarch64-linux": [
+              "tools/hayabusa/hayabusa-arm-lin",
+              "dfir-timeline",
+              "-f",
+              "/case/input.log",
+              "-o",
+              "/out/result.json",
+              "-r",
+              "tools/hayabusa/rules",
+              "-q",
+              "--no-wizard",
+              "--output-type",
+              "jsonl",
+              "-p",
+              "super-verbose",
+              "-K",
+              "--threads",
+              "2"
+            ],
+            "aarch64-darwin": [
+              "tools/hayabusa/hayabusa-mac",
+              "dfir-timeline",
+              "-f",
+              "/case/input.log",
+              "-o",
+              "/out/result.json",
+              "-r",
+              "tools/hayabusa/rules",
+              "-q",
+              "--no-wizard",
+              "--output-type",
+              "jsonl",
+              "-p",
+              "super-verbose",
+              "-K",
+              "--threads",
+              "2"
+            ]
+          }
+        },
+        "json_evtx": {
+          "error": "not supported"
+        },
+        "json_winlogbeat": {
+          "error": "not supported"
+        }
+      },
+      {
+        "evtx": {
+          "local_commands": {
+            "x86_64-linux": [
+              "tools/chainsaw/chainsaw-intel-lin",
+              "--num-threads",
+              "2",
+              "hunt",
+              "/case/input.log",
+              "--sigma",
+              "tools/chainsaw/sigma/rules",
+              "--sigma",
+              "tools/chainsaw/sigma/rules-emerging-threats",
+              "--sigma",
+              "tools/chainsaw/sigma/rules-threat-hunting",
+              "-r",
+              "tools/chainsaw/rules/",
+              "--mapping",
+              "tools/chainsaw/mappings/sigma-event-logs-all.yml",
+              "--output",
+              "/out/result.json",
+              "--jsonl"
+            ],
+            "aarch64-linux": [
+              "tools/chainsaw/chainsaw-arm-lin",
+              "--num-threads",
+              "2",
+              "hunt",
+              "/case/input.log",
+              "--sigma",
+              "tools/chainsaw/sigma/rules",
+              "--sigma",
+              "tools/chainsaw/sigma/rules-emerging-threats",
+              "--sigma",
+              "tools/chainsaw/sigma/rules-threat-hunting",
+              "-r",
+              "tools/chainsaw/rules/",
+              "--mapping",
+              "tools/chainsaw/mappings/sigma-event-logs-all.yml",
+              "--output",
+              "/out/result.json",
+              "--jsonl"
+            ],
+            "aarch64-darwin": [
+              "tools/chainsaw/chainsaw-mac",
+              "--num-threads",
+              "2",
+              "hunt",
+              "/case/input.log",
+              "--sigma",
+              "tools/chainsaw/sigma/rules",
+              "--sigma",
+              "tools/chainsaw/sigma/rules-emerging-threats",
+              "--sigma",
+              "tools/chainsaw/sigma/rules-threat-hunting",
+              "-r",
+              "tools/chainsaw/rules/",
+              "--mapping",
+              "tools/chainsaw/mappings/sigma-event-logs-all.yml",
+              "--output",
+              "/out/result.json",
+              "--jsonl"
+            ]
+          }
+        },
+        "json_evtx": {
+          "error": "not supported"
+        },
+        "json_winlogbeat": {
+          "error": "not supported"
+        }
+      },
+      {
+        "evtx": {
+          "docker_args": [
+            "-e",
+            "/case/input.log",
+            "-r",
+            "/rules/rules_windows_merged.json",
+            "-o",
+            "/out/result.json"
+          ]
+        },
+        "json_evtx": {
+          "docker_args": [
+            "-e",
+            "/case/input.log",
+            "-r",
+            "/rules/rules_windows_merged.json",
+            "-o",
+            "/out/result.json",
+            "-j"
+          ]
+        },
+        "json_winlogbeat": {
+          "docker_args": [
+            "-e",
+            "/case/input.log",
+            "-r",
+            "/rules/rules_windows_merged.json",
+            "-o",
+            "/out/result.json",
+            "-j"
+          ]
+        }
+      },
+      {
+        "evtx": {
+          "local_commands": {
+            "x86_64-linux": [
+              "tools/rsigma/rsigma-intel-lin",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (.Event // . | obj) as $r | ($r.System | obj) as $s |\n            ($s.TimeCreated | obj) as $tc | ($s.Provider | obj) as $p |\n            ($s.Channel // .Channel) as $channel |\n            . + ($r.UserData // {} | userdata) + ($r.EventData // {} | eventdata) | . + {\n                EventID: ($s.EventID // .EventID | scalar), Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: ($s.Computer // .Computer),\n                Timestamp: ($tc.\"#attributes\".SystemTime // $s.TimeCreated_attributes.SystemTime //\n                    $tc.SystemTime // ($s.TimeCreated | scalar) // .Timestamp // .UtcTime),\n                Provider_Name: ($p.\"#attributes\".Name // $s.Provider_attributes.Name //\n                    ($s.Provider | scalar) // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ],
+            "aarch64-linux": [
+              "tools/rsigma/rsigma-arm-lin",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (.Event // . | obj) as $r | ($r.System | obj) as $s |\n            ($s.TimeCreated | obj) as $tc | ($s.Provider | obj) as $p |\n            ($s.Channel // .Channel) as $channel |\n            . + ($r.UserData // {} | userdata) + ($r.EventData // {} | eventdata) | . + {\n                EventID: ($s.EventID // .EventID | scalar), Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: ($s.Computer // .Computer),\n                Timestamp: ($tc.\"#attributes\".SystemTime // $s.TimeCreated_attributes.SystemTime //\n                    $tc.SystemTime // ($s.TimeCreated | scalar) // .Timestamp // .UtcTime),\n                Provider_Name: ($p.\"#attributes\".Name // $s.Provider_attributes.Name //\n                    ($s.Provider | scalar) // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ],
+            "aarch64-darwin": [
+              "tools/rsigma/rsigma-mac",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (.Event // . | obj) as $r | ($r.System | obj) as $s |\n            ($s.TimeCreated | obj) as $tc | ($s.Provider | obj) as $p |\n            ($s.Channel // .Channel) as $channel |\n            . + ($r.UserData // {} | userdata) + ($r.EventData // {} | eventdata) | . + {\n                EventID: ($s.EventID // .EventID | scalar), Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: ($s.Computer // .Computer),\n                Timestamp: ($tc.\"#attributes\".SystemTime // $s.TimeCreated_attributes.SystemTime //\n                    $tc.SystemTime // ($s.TimeCreated | scalar) // .Timestamp // .UtcTime),\n                Provider_Name: ($p.\"#attributes\".Name // $s.Provider_attributes.Name //\n                    ($s.Provider | scalar) // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ]
+          }
+        },
+        "json_evtx": {
+          "local_commands": {
+            "x86_64-linux": [
+              "tools/rsigma/rsigma-intel-lin",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (.Event // . | obj) as $r | ($r.System | obj) as $s |\n            ($s.TimeCreated | obj) as $tc | ($s.Provider | obj) as $p |\n            ($s.Channel // .Channel) as $channel |\n            . + ($r.UserData // {} | userdata) + ($r.EventData // {} | eventdata) | . + {\n                EventID: ($s.EventID // .EventID | scalar), Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: ($s.Computer // .Computer),\n                Timestamp: ($tc.\"#attributes\".SystemTime // $s.TimeCreated_attributes.SystemTime //\n                    $tc.SystemTime // ($s.TimeCreated | scalar) // .Timestamp // .UtcTime),\n                Provider_Name: ($p.\"#attributes\".Name // $s.Provider_attributes.Name //\n                    ($s.Provider | scalar) // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ],
+            "aarch64-linux": [
+              "tools/rsigma/rsigma-arm-lin",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (.Event // . | obj) as $r | ($r.System | obj) as $s |\n            ($s.TimeCreated | obj) as $tc | ($s.Provider | obj) as $p |\n            ($s.Channel // .Channel) as $channel |\n            . + ($r.UserData // {} | userdata) + ($r.EventData // {} | eventdata) | . + {\n                EventID: ($s.EventID // .EventID | scalar), Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: ($s.Computer // .Computer),\n                Timestamp: ($tc.\"#attributes\".SystemTime // $s.TimeCreated_attributes.SystemTime //\n                    $tc.SystemTime // ($s.TimeCreated | scalar) // .Timestamp // .UtcTime),\n                Provider_Name: ($p.\"#attributes\".Name // $s.Provider_attributes.Name //\n                    ($s.Provider | scalar) // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ],
+            "aarch64-darwin": [
+              "tools/rsigma/rsigma-mac",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (.Event // . | obj) as $r | ($r.System | obj) as $s |\n            ($s.TimeCreated | obj) as $tc | ($s.Provider | obj) as $p |\n            ($s.Channel // .Channel) as $channel |\n            . + ($r.UserData // {} | userdata) + ($r.EventData // {} | eventdata) | . + {\n                EventID: ($s.EventID // .EventID | scalar), Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: ($s.Computer // .Computer),\n                Timestamp: ($tc.\"#attributes\".SystemTime // $s.TimeCreated_attributes.SystemTime //\n                    $tc.SystemTime // ($s.TimeCreated | scalar) // .Timestamp // .UtcTime),\n                Provider_Name: ($p.\"#attributes\".Name // $s.Provider_attributes.Name //\n                    ($s.Provider | scalar) // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ]
+          }
+        },
+        "json_winlogbeat": {
+          "local_commands": {
+            "x86_64-linux": [
+              "tools/rsigma/rsigma-intel-lin",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (field(\"winlog.channel\") // .Channel) as $channel |\n            . + (field(\"winlog.user_data\") // {} | userdata) + (field(\"winlog.event_data\") // {} | eventdata) | . + {\"Image\": (.\"Image\" // field(\"process.executable\")), \"CommandLine\": (.\"CommandLine\" // field(\"process.command_line\")), \"ProcessId\": (.\"ProcessId\" // field(\"process.pid\")), \"ProcessGuid\": (.\"ProcessGuid\" // field(\"process.entity_id\")), \"ParentImage\": (.\"ParentImage\" // field(\"process.parent.executable\")), \"ParentCommandLine\": (.\"ParentCommandLine\" // field(\"process.parent.command_line\")), \"ParentProcessId\": (.\"ParentProcessId\" // field(\"process.parent.pid\")), \"ParentProcessGuid\": (.\"ParentProcessGuid\" // field(\"process.parent.entity_id\")), \"OriginalFileName\": (.\"OriginalFileName\" // field(\"process.pe.original_file_name\")), \"CurrentDirectory\": (.\"CurrentDirectory\" // field(\"process.working_directory\")), \"User\": (.\"User\" // field(\"user.name\")), \"Company\": (.\"Company\" // field(\"process.pe.company\")), \"Description\": (.\"Description\" // field(\"process.pe.description\")), \"Product\": (.\"Product\" // field(\"process.pe.product\")), \"FileVersion\": (.\"FileVersion\" // field(\"process.pe.file_version\")), \"SourceIp\": (.\"SourceIp\" // field(\"source.ip\")), \"SourcePort\": (.\"SourcePort\" // field(\"source.port\")), \"SourceHostname\": (.\"SourceHostname\" // field(\"source.domain\")), \"DestinationIp\": (.\"DestinationIp\" // field(\"destination.ip\")), \"DestinationPort\": (.\"DestinationPort\" // field(\"destination.port\")), \"DestinationHostname\": (.\"DestinationHostname\" // field(\"destination.domain\")), \"Protocol\": (.\"Protocol\" // field(\"network.transport\")), \"DestinationPortName\": (.\"DestinationPortName\" // field(\"network.protocol\")), \"TargetFilename\": (.\"TargetFilename\" // field(\"file.path\")), \"ImageLoaded\": (.\"ImageLoaded\" // field(\"file.path\")), \"PipeName\": (.\"PipeName\" // field(\"file.name\")), \"TargetObject\": (.\"TargetObject\" // field(\"registry.path\")), \"QueryName\": (.\"QueryName\" // field(\"dns.question.name\")), \"QueryStatus\": (.\"QueryStatus\" // field(\"sysmon.dns.status\")), \"Signed\": (.\"Signed\" // field(\"file.code_signature.signed\")), \"SignatureStatus\": (.\"SignatureStatus\" // field(\"file.code_signature.status\")), \"Signature\": (.\"Signature\" // field(\"file.code_signature.subject_name\")), \"Imphash\": (.\"Imphash\" // field(\"file.pe.imphash\")), EventID: (field(\"winlog.event_id\") // field(\"event.code\") // .EventID | scalar),\n                Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: (field(\"winlog.computer_name\") // field(\"host.name\") // .Computer),\n                Timestamp: (.\"@timestamp\" // .Timestamp),\n                Provider_Name: (field(\"winlog.provider_name\") // field(\"event.provider\") // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ],
+            "aarch64-linux": [
+              "tools/rsigma/rsigma-arm-lin",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (field(\"winlog.channel\") // .Channel) as $channel |\n            . + (field(\"winlog.user_data\") // {} | userdata) + (field(\"winlog.event_data\") // {} | eventdata) | . + {\"Image\": (.\"Image\" // field(\"process.executable\")), \"CommandLine\": (.\"CommandLine\" // field(\"process.command_line\")), \"ProcessId\": (.\"ProcessId\" // field(\"process.pid\")), \"ProcessGuid\": (.\"ProcessGuid\" // field(\"process.entity_id\")), \"ParentImage\": (.\"ParentImage\" // field(\"process.parent.executable\")), \"ParentCommandLine\": (.\"ParentCommandLine\" // field(\"process.parent.command_line\")), \"ParentProcessId\": (.\"ParentProcessId\" // field(\"process.parent.pid\")), \"ParentProcessGuid\": (.\"ParentProcessGuid\" // field(\"process.parent.entity_id\")), \"OriginalFileName\": (.\"OriginalFileName\" // field(\"process.pe.original_file_name\")), \"CurrentDirectory\": (.\"CurrentDirectory\" // field(\"process.working_directory\")), \"User\": (.\"User\" // field(\"user.name\")), \"Company\": (.\"Company\" // field(\"process.pe.company\")), \"Description\": (.\"Description\" // field(\"process.pe.description\")), \"Product\": (.\"Product\" // field(\"process.pe.product\")), \"FileVersion\": (.\"FileVersion\" // field(\"process.pe.file_version\")), \"SourceIp\": (.\"SourceIp\" // field(\"source.ip\")), \"SourcePort\": (.\"SourcePort\" // field(\"source.port\")), \"SourceHostname\": (.\"SourceHostname\" // field(\"source.domain\")), \"DestinationIp\": (.\"DestinationIp\" // field(\"destination.ip\")), \"DestinationPort\": (.\"DestinationPort\" // field(\"destination.port\")), \"DestinationHostname\": (.\"DestinationHostname\" // field(\"destination.domain\")), \"Protocol\": (.\"Protocol\" // field(\"network.transport\")), \"DestinationPortName\": (.\"DestinationPortName\" // field(\"network.protocol\")), \"TargetFilename\": (.\"TargetFilename\" // field(\"file.path\")), \"ImageLoaded\": (.\"ImageLoaded\" // field(\"file.path\")), \"PipeName\": (.\"PipeName\" // field(\"file.name\")), \"TargetObject\": (.\"TargetObject\" // field(\"registry.path\")), \"QueryName\": (.\"QueryName\" // field(\"dns.question.name\")), \"QueryStatus\": (.\"QueryStatus\" // field(\"sysmon.dns.status\")), \"Signed\": (.\"Signed\" // field(\"file.code_signature.signed\")), \"SignatureStatus\": (.\"SignatureStatus\" // field(\"file.code_signature.status\")), \"Signature\": (.\"Signature\" // field(\"file.code_signature.subject_name\")), \"Imphash\": (.\"Imphash\" // field(\"file.pe.imphash\")), EventID: (field(\"winlog.event_id\") // field(\"event.code\") // .EventID | scalar),\n                Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: (field(\"winlog.computer_name\") // field(\"host.name\") // .Computer),\n                Timestamp: (.\"@timestamp\" // .Timestamp),\n                Provider_Name: (field(\"winlog.provider_name\") // field(\"event.provider\") // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ],
+            "aarch64-darwin": [
+              "tools/rsigma/rsigma-mac",
+              "engine",
+              "eval",
+              "--config",
+              "<ROOT>/tools/rsigma/config/rsigma.yml",
+              "--rules",
+              "<ROOT>/tools/rsigma/rules",
+              "--event",
+              "@/case/input.log",
+              "--input-format",
+              "json",
+              "--output-format",
+              "ndjson",
+              "--color",
+              "never",
+              "--include-event",
+              "--pipeline",
+              "<ROOT>/tools/rsigma/mappings/windows.yml",
+              "--jq",
+              "\n        def obj: if type == \"object\" then . else {} end;\n        def scalar: if type == \"object\" then .[\"#text\"] // .value else . end;\n        def field($path): .[$path] // getpath($path | split(\".\"));\n        def userdata:\n            reduce to_entries[] as $item ({};\n                . + (if ($item.value | type) == \"object\" then\n                    if ($item.value | has(\"#text\")) then {($item.key): ($item.value | scalar)}\n                    else ($item.value | userdata) end\n                else {($item.key): $item.value} end));\n        def eventdata:\n            . as $data | (.Data // []) |\n            (if type == \"array\" then . else [.] end) |\n            map(select(type == \"object\") |\n                {key: (.[\"@Name\"] // .\"#attributes\".Name // .Name), value: (. | scalar)} |\n                select(.key != null)) | from_entries | . + $data;\n    (field(\"winlog.channel\") // .Channel) as $channel |\n            . + (field(\"winlog.user_data\") // {} | userdata) + (field(\"winlog.event_data\") // {} | eventdata) | . + {\"Image\": (.\"Image\" // field(\"process.executable\")), \"CommandLine\": (.\"CommandLine\" // field(\"process.command_line\")), \"ProcessId\": (.\"ProcessId\" // field(\"process.pid\")), \"ProcessGuid\": (.\"ProcessGuid\" // field(\"process.entity_id\")), \"ParentImage\": (.\"ParentImage\" // field(\"process.parent.executable\")), \"ParentCommandLine\": (.\"ParentCommandLine\" // field(\"process.parent.command_line\")), \"ParentProcessId\": (.\"ParentProcessId\" // field(\"process.parent.pid\")), \"ParentProcessGuid\": (.\"ParentProcessGuid\" // field(\"process.parent.entity_id\")), \"OriginalFileName\": (.\"OriginalFileName\" // field(\"process.pe.original_file_name\")), \"CurrentDirectory\": (.\"CurrentDirectory\" // field(\"process.working_directory\")), \"User\": (.\"User\" // field(\"user.name\")), \"Company\": (.\"Company\" // field(\"process.pe.company\")), \"Description\": (.\"Description\" // field(\"process.pe.description\")), \"Product\": (.\"Product\" // field(\"process.pe.product\")), \"FileVersion\": (.\"FileVersion\" // field(\"process.pe.file_version\")), \"SourceIp\": (.\"SourceIp\" // field(\"source.ip\")), \"SourcePort\": (.\"SourcePort\" // field(\"source.port\")), \"SourceHostname\": (.\"SourceHostname\" // field(\"source.domain\")), \"DestinationIp\": (.\"DestinationIp\" // field(\"destination.ip\")), \"DestinationPort\": (.\"DestinationPort\" // field(\"destination.port\")), \"DestinationHostname\": (.\"DestinationHostname\" // field(\"destination.domain\")), \"Protocol\": (.\"Protocol\" // field(\"network.transport\")), \"DestinationPortName\": (.\"DestinationPortName\" // field(\"network.protocol\")), \"TargetFilename\": (.\"TargetFilename\" // field(\"file.path\")), \"ImageLoaded\": (.\"ImageLoaded\" // field(\"file.path\")), \"PipeName\": (.\"PipeName\" // field(\"file.name\")), \"TargetObject\": (.\"TargetObject\" // field(\"registry.path\")), \"QueryName\": (.\"QueryName\" // field(\"dns.question.name\")), \"QueryStatus\": (.\"QueryStatus\" // field(\"sysmon.dns.status\")), \"Signed\": (.\"Signed\" // field(\"file.code_signature.signed\")), \"SignatureStatus\": (.\"SignatureStatus\" // field(\"file.code_signature.status\")), \"Signature\": (.\"Signature\" // field(\"file.code_signature.subject_name\")), \"Imphash\": (.\"Imphash\" // field(\"file.pe.imphash\")), EventID: (field(\"winlog.event_id\") // field(\"event.code\") // .EventID | scalar),\n                Channel: (.Channel // $channel), _logstotal_channel: $channel,\n                Computer: (field(\"winlog.computer_name\") // field(\"host.name\") // .Computer),\n                Timestamp: (.\"@timestamp\" // .Timestamp),\n                Provider_Name: (field(\"winlog.provider_name\") // field(\"event.provider\") // .Provider_Name)} | . + {Provider_Name: (.Provider_Name // ({\"Microsoft-Windows-Sysmon/Operational\": \"Microsoft-Windows-Sysmon\", \"Security\": \"Microsoft-Windows-Security-Auditing\", \"Microsoft-Windows-PowerShell/Operational\": \"Microsoft-Windows-PowerShell\", \"PowerShellCore/Operational\": \"PowerShellCore\", \"Windows PowerShell\": \"PowerShell\"}[._logstotal_channel]))} | if ._logstotal_channel == \"Security\" and (.EventID | tostring) == \"4688\" then . + {Image: (.NewProcessName // .Image), ParentImage: (.ParentProcessName // .ParentImage), ParentProcessId: (.ProcessId // .ParentProcessId), ProcessId: (.NewProcessId // .ProcessId)} else . end | . + {_logstotal_source: ((.Provider_Name // \"\") + \":\" + (._logstotal_channel // \"\") + \":\" + (.EventID | tostring))}"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "windows_xml.yml": {
+    "tasks": [
+      {
+        "tool": "zircolite",
+        "docker_image": "wagga40/zircolite:4.0.0@sha256:552f1900fb5533a58fdad1ae61f46c09018271787d5d7a2d08cb318d3221461f",
+        "rules_path": "tools/zircolite/rules/rules_windows_merged.json",
+        "timeout": 300,
+        "extra_args": [],
+        "docker_options": []
+      }
+    ],
+    "commands": [
+      {
+        "xml_evtx": {
+          "docker_args": [
+            "-e",
+            "/case/input.log",
+            "-r",
+            "/rules/rules_windows_merged.json",
+            "-o",
+            "/out/result.json",
+            "--evtxtract-input"
+          ]
+        }
+      }
+    ]
+  }
+}

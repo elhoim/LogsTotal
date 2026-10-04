@@ -256,9 +256,10 @@ def test_shipped_journald_config_exists_beside_the_ruleset():
     """workflows/linux_journald.yml names it; it must sit in the mounted directory."""
     import yaml
 
+    from app.detection.workflow_runner import parse_workflow_yaml
+
     root = Path(__file__).resolve().parent.parent
-    wf = yaml.safe_load((root / "workflows" / "linux_journald.yml").read_text(encoding="utf-8"))
-    task = wf["tasks"][0]
+    task = parse_workflow_yaml((root / "workflows" / "linux_journald.yml").read_text(encoding="utf-8"))[0]
     name = task["options"]["config"]
     cfg = (root / task["rules_path"]).parent / name
     assert cfg.is_file(), f"{cfg} is referenced by the workflow but missing"

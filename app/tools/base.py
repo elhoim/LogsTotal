@@ -1,4 +1,4 @@
-"""Base classes for detection tool adapters — ABC, dataclasses, execution logic."""
+"""Base classes for detection tool adapters — dataclasses and execution logic."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ import signal
 import subprocess
 import threading
 import time
-from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -19,6 +18,7 @@ from typing import Any
 
 from app.json_utils import load_file as json_load_file
 from app.json_utils import loads as json_loads
+from app.tools.mapping import OutputMapping
 from app.tools.output import RawMatch
 
 
@@ -165,7 +165,7 @@ class ToolOutput:
     stderr: str = ""
 
 
-class ToolAdapter(ABC):
+class ToolAdapter:
     """Base class for all detection tool adapters.
 
     Supports three execution modes selected by workflow config keys:
@@ -174,13 +174,13 @@ class ToolAdapter(ABC):
     - **docker_image**: run inside a pre-built Docker image.
     - **dockerfile**: build an image from a Dockerfile, then run it.
 
-    Subclasses implement ``_build_local_cmd`` and ``_docker_tool_args``
-    for tool-specific command-line arguments, ``_output_filename`` for the
-    expected output file name, and ``normalize`` for findings extraction.
-    Override ``_load_output`` when the tool emits JSONL instead of JSON.
+    Subclasses declare ``output_mapping`` and implement CLI/input hooks. The
+    shared decoder supplies ``normalize`` and ``iter_raw_matches``; catalog
+    suffixes supply output names. Hooks remain overridable for custom formats.
     """
 
     name: str = "base"
+    output_mapping: OutputMapping | None = None
     SUPPORTED_TYPES: set[str] | None = None  # override in subclass to restrict by log type
 
     _CONTAINER_CASE = "/case"
@@ -233,6 +233,11 @@ class ToolAdapter(ABC):
     ) -> ToolOutput:
         """Route to local or Docker execution based on config."""
         supported = getattr(self.__class__, "SUPPORTED_TYPES", None)
+        if supported is None:
+            from app.tools.catalog import TOOLS
+
+            spec = TOOLS.get(self.name)
+            supported = spec.supported_types if spec is not None else None
         if supported is not None and log_type is not None and log_type not in supported:
             return ToolOutput(success=False, error="not supported")
         self._cancel_event = cancel_event
@@ -520,21 +525,35 @@ class ToolAdapter(ABC):
     # ── output loading ───────────────────────────────────────────────────
 
     def _load_output(self, path: Path) -> Any:
-        """Load tool output file.  Default: JSON.  Override for JSONL."""
+        """Load the declared output format; custom completion paths may override."""
+        from app.tools.mapping import RecordStream, file_records
+
+        mapping = self.output_mapping
+        if mapping is not None and (mapping.format == "jsonl" or mapping.strict):
+            return RecordStream(file_records(path, format=mapping.format, strict=mapping.strict))
         return self._load_json(path)
 
-    @abstractmethod
     def _output_filename(self, file_path: Path) -> str:
-        """Return the expected output filename for this tool."""
-        ...
+        """Return the catalog suffix; adapters may override nonstandard names."""
+        from app.tools.catalog import TOOLS
+
+        return file_path.stem + TOOLS[self.name].output_suffix
 
     @classmethod
     def iter_raw_matches(cls, path: Path) -> Iterator[RawMatch]:
         """Yield evidence with rule identity without constructing a configured adapter."""
-        raise NotImplementedError(f"{cls.name} does not define a raw event reader")
+        from app.tools.mapping import iter_raw_matches
 
-    @abstractmethod
-    def normalize(self, raw: Any) -> list[NormalizedFinding]: ...
+        if cls.output_mapping is None:
+            raise NotImplementedError(f"{cls.name} does not define a raw event reader")
+        return iter_raw_matches(path, cls.output_mapping)
+
+    def normalize(self, raw: Any) -> list[NormalizedFinding]:
+        from app.tools.mapping import normalize
+
+        if self.output_mapping is None:
+            raise NotImplementedError(f"{self.name} does not define an output mapping")
+        return normalize(self, raw)
 
     # ── shared helpers ───────────────────────────────────────────────────
 

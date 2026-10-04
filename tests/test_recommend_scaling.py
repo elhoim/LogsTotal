@@ -169,3 +169,13 @@ def test_recommend_is_the_shared_app_concurrency_function(scaling):
 
     assert scaling.recommend is recommend_host_settings
     assert scaling.RAM_GB_PER_WORKER == __import__("app.concurrency", fromlist=["x"]).RAM_GB_PER_WORKER
+
+
+def test_detect_workflow_threads_with_profiles_uses_explicit_workflow_limit(scaling, tmp_path):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    task = workflows / "profile.yml"
+    task.write_text("tasks:\n  - tool: hayabusa\n    profile: default\n")
+    assert scaling.detect_workflow_threads(tmp_path) is None
+    task.write_text("tasks:\n  - tool: hayabusa\n    profile: default\n    threads: 1\n")
+    assert scaling.detect_workflow_threads(tmp_path) == 1

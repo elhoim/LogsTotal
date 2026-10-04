@@ -6,8 +6,5 @@ log_types:
 
 tasks:
   - tool: chopchopgo
-    tool_path:
-      x86_64-linux: tools/chopchopgo/chopchopgo-intel-lin
-      aarch64-linux: tools/chopchopgo/chopchopgo-arm-lin
-    rules_path: tools/chopchopgo/rules/builtin
+    profile: default
     timeout: 300

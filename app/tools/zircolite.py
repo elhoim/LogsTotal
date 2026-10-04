@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import logging
 from pathlib import Path
-from typing import Any
 
-from app.tools.base import NormalizedFinding, ToolAdapter
+from app.tools.base import ToolAdapter
 from app.tools.catalog import TOOLS
-from app.tools.output import RawMatch, event_timestamp, json_records
-
-_log = logging.getLogger(__name__)
+from app.tools.mapping import MetadataMapping, OutputMapping, Selector, list_events, list_tags, sigma_content
 
 
 class ZircoliteAdapter(ToolAdapter):
@@ -29,6 +25,28 @@ class ZircoliteAdapter(ToolAdapter):
     """
 
     name = "zircolite"
+    output_mapping = OutputMapping(
+        finding=MetadataMapping(
+            rule_name=Selector((("title",),), default="Unknown Rule", transforms=(str,)),
+            rule_id=Selector((("id",),), default="", transforms=(str,)),
+            severity=Selector((("rule_level",), ("level",)), default="informational"),
+            tags=Selector((("tags",),), default=[], transforms=(list_tags,)),
+            rule_content=Selector((("sigma",),), default=[], fallback="missing", transforms=(sigma_content,)),
+        ),
+        raw_overrides={
+            "rule_name": Selector((("title",),), default="", fallback="missing"),
+            "rule_id": Selector((("id",),), default="", fallback="missing"),
+            "severity": Selector((("level",),), fallback="missing"),
+            "tags": Selector(default=[]),
+            "rule_content": Selector(default=""),
+        },
+        events=Selector((("matches",),), default=[], transforms=(list_events,)),
+        raw_events=Selector((("matches",),), default=[], fallback="missing"),
+        reported_count=Selector((("count",),), fallback="missing"),
+        grouping="blocks",
+        lookup_rule=False,
+        record_label="rule block(s)",
+    )
 
     SUPPORTED_TYPES = TOOLS["zircolite"].supported_types
 
@@ -154,17 +172,7 @@ class ZircoliteAdapter(ToolAdapter):
             return []
         return [aliases[0]]
 
-    @classmethod
-    def iter_raw_matches(cls, path: Path):
-        for rule in json_records(path):
-            for event in rule.get("matches", []):
-                if isinstance(event, dict):
-                    yield RawMatch(event, rule.get("title", ""), rule.get("id", ""), rule.get("level"), timestamp=event_timestamp(event))
-
     # ── subclass hooks ───────────────────────────────────────────────────
-
-    def _output_filename(self, file_path: Path) -> str:
-        return file_path.stem + TOOLS["zircolite"].output_suffix
 
     def _config_flags(self, rules_dir: str) -> list[str]:
         """``-c <config>`` for the workflow's ``options.config``, resolved beside the rules.
@@ -245,54 +253,3 @@ class ZircoliteAdapter(ToolAdapter):
         args.extend(self._config_flags(self._CONTAINER_RULES))
         args.extend(self._extra_args or self.config.get("zircolite_args", []))
         return args
-
-    # ── normalize ────────────────────────────────────────────────────────
-
-    def normalize(self, raw: Any) -> list[NormalizedFinding]:
-        """
-        Zircolite output format: list of objects with
-        title, id, description, sigmafile, sigma, rule_level, tags, count, matches.
-        Severity is in rule_level (e.g. "high"); matches holds sample events.
-        """
-        findings = []
-        skipped = 0
-        for item in self._dict_records(raw):
-            try:
-                matches = item.get("matches") or []
-                if not isinstance(matches, list):
-                    matches = []
-                severity_raw = item.get("rule_level") or item.get("level", "informational")
-
-                sigma_list = item.get("sigma", [])
-                rule_content = ""
-                if isinstance(sigma_list, list) and sigma_list:
-                    rule_content = sigma_list[0] if len(sigma_list) == 1 else "\n---\n".join(str(s) for s in sigma_list)
-                elif isinstance(sigma_list, str) and sigma_list:
-                    rule_content = sigma_list
-
-                count = item.get("count", len(matches))
-                if not isinstance(count, int):
-                    count = len(matches)
-
-                tags = item.get("tags") or []
-                if not isinstance(tags, list):
-                    tags = [str(tags)]
-
-                findings.append(
-                    NormalizedFinding(
-                        rule_name=str(item.get("title") or "Unknown Rule"),
-                        severity=self._normalize_severity(severity_raw),
-                        count=count,
-                        rule_id=str(item.get("id") or ""),
-                        tags=tags,
-                        details=matches[: self.max_details],
-                        rule_content=rule_content,
-                    )
-                )
-            except Exception:
-                # Per-record isolation — see the same guard in the Hayabusa adapter.
-                skipped += 1
-
-        if skipped:
-            _log.warning("zircolite: skipped %d unparseable rule block(s)", skipped)
-        return findings

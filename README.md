@@ -14,7 +14,7 @@ No account is needed to submit a file or read public results.
 [Hayabusa](https://github.com/Yamato-Security/hayabusa),
 [ChopChopGo](https://github.com/M00NLIG7/ChopChopGo) and
 [RSigma](https://github.com/timescale/rsigma). Adding another takes a catalog entry and an adapter,
-for a binary or a Docker image — see
+with a typed output mapping, for a binary or a Docker image — see
 [Adding a tool adapter](docs/contribute/development.md#adding-a-tool-adapter).
 
 ## Screenshots

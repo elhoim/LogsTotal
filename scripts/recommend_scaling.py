@@ -51,6 +51,7 @@ def detect_workflow_threads(project_root: Path | None = None) -> int | None:
 
     Omitting `threads:` does not mean "all logical cores": LogsTotal passes an
     explicit cap of 1. The shipped workflows set `threads: 2` for hayabusa/chainsaw.
+    Runtime profiles supply artifacts/rules/options, so limits remain explicit here.
     """
     project_root = project_root or PROJECT_ROOT
     values: list[int] = []

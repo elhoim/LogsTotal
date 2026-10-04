@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.constants import RE_DOMAIN as _RE_DOMAIN
 from app.constants import RE_HASH as _RE_HASH
 from app.constants import RE_IPV4 as _RE_IPV4
+from app.tools.event_fields import EventView
 
 _UPSERT_BATCH = 200
 
@@ -368,19 +369,7 @@ def _flatten(event: dict) -> dict:
     Zircolite/Chainsaw) plus ``Event.System``, which analytics reads separately.
     Top-level keys win on conflict.
     """
-    root = event.get("Event")
-    root = root if isinstance(root, dict) else {}
-    sys_d = root.get("System") if isinstance(root.get("System"), dict) else {}
-    data_d = root.get("EventData") if isinstance(root.get("EventData"), dict) else {}
-    details_d = event.get("Details") if isinstance(event.get("Details"), dict) else {}
-
-    merged: dict = {}
-    for d in (sys_d, data_d, details_d, event):
-        for k, v in d.items():
-            if k in ("Event", "Details", "EventData", "System"):
-                continue
-            merged[k] = v
-    return merged
+    return EventView(event).relationship_fields
 
 
 def _event_id(fields: dict) -> int | None:

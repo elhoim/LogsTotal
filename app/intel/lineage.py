@@ -27,7 +27,8 @@ import os
 import re
 
 from app.constants import RE_IPV4
-from app.intel.relationships import _HOST_NOISE, _HOSTNAME_KEYS, _event_id, _extract_hashes, _first, _flatten
+from app.intel.relationships import _HOST_NOISE, _HOSTNAME_KEYS, _event_id, _extract_hashes, _first
+from app.tools.event_fields import EventView
 
 # Windows process-creation event IDs we build lineage from.
 PROCESS_CREATE_EIDS: frozenset[int] = frozenset({1, 4688})
@@ -190,14 +191,7 @@ def _parse_event(event: dict) -> dict | None:
     """Project a raw event to a concrete process node, or None if not a process create."""
     if not isinstance(event, dict):
         return None
-    fields = _flatten(event)
-    # Hayabusa keeps the non-Details EVTX fields (ParentImage, UtcTime, …) in
-    # ExtraFieldInfo, which the shared _flatten deliberately ignores (it mirrors
-    # the analytics scan). Merge it here without overwriting flattened keys.
-    extra = event.get("ExtraFieldInfo")
-    if isinstance(extra, dict):
-        for k, v in extra.items():
-            fields.setdefault(k, v)
+    fields = EventView(event).lineage_fields
     if not fields:
         return None
     eid = _event_id(fields)

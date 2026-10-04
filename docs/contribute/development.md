@@ -71,40 +71,145 @@ Never hand-edit `requirements.txt` — any edit you make will be overwritten the
 
 ## Adding a tool adapter
 
-The integration contract has two parts: a `ToolSpec` in `app/tools/catalog.py`, and a
-`ToolAdapter` subclass in `app/tools/mytool.py`. The catalog is standard-library-only so
-the updater and scaling commands also work before the application environment exists.
+The integration contract has three parts: a `ToolSpec` in `app/tools/catalog.py`, a
+`ToolAdapter` subclass, and a typed `OutputMapping` declared beside the adapter. The catalog
+is standard-library-only so the updater, diagnostics and offline tooling can use it before
+the application environment exists.
 
-1. Declare the adapter import path, supported log types and execution modes, unique raw
-   output suffix, thread capability, upstream repositories, release assets and required
-   runtime files in the catalog. The registry loads the adapter lazily. Diagnostics,
-   scaling, updates and release artifact checks consume the same entry.
-2. Implement `_output_filename()`, `_build_local_cmd()` and
-   `normalize() -> list[NormalizedFinding]`. Add `_docker_tool_args()` only when supported.
-   Reuse the base process runner for timeout, cancellation and process-group cleanup.
-   For engines that emit detections on stdout, `_exec(stdout_path=...)` writes directly to
-   disk. Validate completion before publishing the final raw output file; a parse error
-   must not become a successful scan with zero matches.
-3. Implement the class method `iter_raw_matches(path)`, yielding `RawMatch` records from
-   `app/tools/output.py`. Include the event, rule ID, title, severity, tags and timestamp;
-   retain original event fields alongside any analytics aliases. This connects the tool
-   to timeline markers, entities, relationships and process trees without engine-specific
-   branches in `event_timeline.py`. Counts must include every match even when finding
-   details are capped. Keep JSONL readers streaming.
-4. Add the tool's staging recipe to `scripts/detection_tools.py` when its rule layout needs
-   one. Stage binaries, rules and mappings together, preserve licenses, record checksums
-   and provenance in `tools/<tool>/upstream.json`, and validate release compatibility.
-   RSigma's pre-1.0 minor-version guard is an example of a stricter compatibility policy.
-5. Add a workflow task with architecture-specific paths, update the tool runbook and
-   `THIRD_PARTY_NOTICES.md`, and test named detections against real samples. Use
-   `tests/test_tool_contract.py` for the shared contract and `tests/test_rsigma.py` for
-   strict parsing, logsource boundaries, field aliases and raw-evidence tests. Verify the
-   storage round trip, caps, cancellation and failure paths as well as successful matches.
+### Responsibilities
+
+| Component | Owns |
+|---|---|
+| Catalog | Tool identity, capabilities, release assets, required files and named runtime profiles |
+| Workflow | Tools to run, accepted input types, profile selection and per-task overrides |
+| Adapter | CLI arguments, input preparation, Sigma evaluation mappings and completion checks |
+| Output mapping | Native record layout, rule metadata, grouping, counts, evidence and field projections |
+| Shared result consumers | Finding persistence, timelines, entities, relationships and process trees |
+
+Input mappings and output mappings have different jobs. RSigma's Windows pipeline and
+Zircolite's journald configuration affect **which rules match**. `OutputMapping` describes
+**the output already produced**. Do not change both layers during an extraction refactor.
+
+### Minimal output mapping
+
+For a JSONL engine emitting a `rule` object and top-level event fields such as `Timestamp`,
+`Computer`, `EventID` and `Image`, the declaration is:
+
+```python
+from app.tools.base import ToolAdapter
+from app.tools.mapping import MetadataMapping, OutputMapping, Selector
+
+
+class ExampleAdapter(ToolAdapter):
+    name = "example"
+    output_mapping = OutputMapping(
+        format="jsonl",
+        grouping="identity",
+        finding=MetadataMapping(
+            rule_name=Selector((("rule", "title"),), default="Unknown Rule"),
+            rule_id=Selector((("rule", "id"),), default=""),
+            severity=Selector((("rule", "level"),)),
+            tags=Selector((("rule", "tags"),), default=[]),
+        ),
+    )
+
+    # Implement _build_local_cmd() for this engine's CLI.
+    # The catalog supplies capabilities and the raw-output filename suffix.
+```
+
+The base adapter uses this same declaration for execution-time loading, `normalize()`
+and `iter_raw_matches()`. `format="json"` expects an array of records;
+`format="jsonl"` streams one record per line. `strict=True` rejects malformed records
+instead of skipping them; a named `validate` callback can check engine-specific requirements.
+A path tuple names literal dictionary keys: `("event", "code")` is nested, while
+`("event.code",)` is a single dotted key. Multiple paths are ordered fallbacks. The default
+fallback skips falsey values; `fallback="missing"` preserves an explicitly present `None`,
+zero or empty string. Named Python transforms handle exceptional native shapes.
+
+Use `events` to select a list of matched events from a rule block and `reported_count` for
+its independent count. `grouping="blocks"` retains separate blocks, including blocks with
+no evidence; `grouping="name"` groups by title; `grouping="identity"` groups by ID with a
+title fallback. Capping stored details never reduces a finding's reported count.
+
+For differently named event fields, declare their native paths once:
+
+```python
+from app.tools.event_fields import EventField, EventProjection, EventRecord, EventSource
+
+EVENT_FIELDS = EventProjection.canonical(
+    EventSource(
+        ("payload",),
+        fields=(
+            EventField("Timestamp", (("when",),)),
+            EventField("Computer", (("host",),)),
+            EventField("Image", (("executable",),)),
+            EventField("User", (("account",),)),
+        ),
+    )
+)
+
+
+def project_event(event):
+    return EventRecord(event, projection=EVENT_FIELDS)
+
+
+# Set event_projection=project_event on the OutputMapping.
+```
+
+The timestamp and host aliases then serve both timeline metadata and entity extraction.
+`EventField` falls through missing or null values by default, preserving zero and `False`.
+Use `fallback="missing"` to preserve explicit nulls too, or `fallback="truthy"` when the
+source contract requires empty or zero values to fall through.
+`EventRecord` serializes as the original native event; its projection is transient and is
+reattached when raw output is read again. Use `detail_projection` separately if saved
+finding samples need canonical aliases for consumers that read details from the database.
+
+### Adding an engine
+
+1. Declare the adapter import path, supported log types and execution modes, unique output
+   suffix, thread capability, upstream repositories, assets and required files in the
+   catalog. Add named runtime profiles for reusable rules and execution settings. Binary
+   paths derive from release assets; workflow tasks can override them.
+2. Implement command construction and any required input preparation. Reuse the base
+   timeout, cancellation and process-group cleanup. For detections emitted on stdout,
+   `_exec(stdout_path=...)` writes to disk. Keep engine-specific completion checks in the
+   adapter: Rsigma validates its summary before publishing a final output file.
+3. Declare the output mapping. Use `detail_projection` for the saved finding sample and
+   `event_projection` for an analytics view that preserves native evidence. Rule YAML
+   lookup is shared; use a named metadata resolver when severity comes from rule content,
+   as it does for ChopChopGo. JSONL readers stream records.
+4. Add a staging recipe to `scripts/detection_tools.py` if the upstream rule layout needs
+   one. Stage binaries, rules and input mappings together, preserve licenses, and record
+   checksums and provenance in `tools/<tool>/upstream.json`. Keep upstream packaging
+   details out of the analytics layer.
+5. Add a workflow task selecting the profile, update the tool runbook and
+   `THIRD_PARTY_NOTICES.md`, and test real samples. Verify findings, matched events, caps,
+   storage replay, attribution, cancellation and incomplete evaluation. The shared mapping
+   and event-view tests include a synthetic engine that reaches analytics without vendor
+   branches in the consumers.
+
+### Preserving existing results
+
+Existing mappings have explicit legacy policies. Hayabusa groups by title and stores a
+reduced sample; Rsigma groups by identity and retains aliases; Zircolite counts rule blocks
+independently of available events. Some raw metadata fallbacks also differ from finding
+metadata. `raw_overrides` records these differences without duplicating the parser.
+
+`EventView` centralizes the field sources used by analytics, relationships, process trees
+and marker metadata. Those consumers do not all use the same precedence: entities may see
+multiple sources, while a process field needs one value. Preserve both the native evidence
+and the consumer-specific view when introducing aliases. In particular, process-only
+fields must not silently expand entity extraction.
+
+`tests/test_output_parity.py` compares against frozen pre-refactor results for all five
+engines, including persistence and JSON exports. Do not regenerate those expectations to
+make a migration pass. Fixing an existing omission is a separate change with explicit
+before/after results. Preserve the source-hour histogram and UTC alert-marker time handling,
+malformed-record policies, sample limits and event-processing caps.
 
 Run `./logstotal check`, `./logstotal test`, and the affected sample workflows. For vendored
-tools, run `./logstotal ci:artifacts` to exercise both release formats. Avoid adding a plugin
-framework or a new database field for a tool that fits this contract; keep conversion and
-upstream-specific behavior inside its adapter and update recipe.
+tools, run `./logstotal ci:artifacts` to exercise both release formats. No plugin framework,
+database field or consumer-specific tool branch is needed for an engine fitting this contract.
 
 ## Deleting rows in the async path
 

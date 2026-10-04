@@ -1228,3 +1228,17 @@ def test_the_system_checks_route_never_runs_the_suite_without_force():
 
     readiness = inspect.getsource(admin_module.readiness_partial)
     assert "stale_ok" not in readiness, "a fresh /admin visit does deserve fresh checks — the TTL governs this one"
+
+
+def test_filesystem_doctor_resolves_profile_runners(tmp_path, monkeypatch):
+    workflows = tmp_path / "workflows"
+    workflows.mkdir()
+    (workflows / "windows.yml").write_text("tasks:\n  - tool: hayabusa\n    profile: default\n  - tool: zircolite\n    profile: windows\n")
+    sources = system_checks._workflow_task_sources(tmp_path)
+    tasks = sources[0][1]
+    assert "threads" not in tasks[0]
+    assert tasks[0]["tool_path"][system_checks._arch_key()].startswith("tools/hayabusa/")
+    assert tasks[1]["docker_image"].startswith("wagga40/zircolite:4.0.0@sha256:")
+    monkeypatch.setattr(system_checks, "_docker_daemon_reachable", lambda: False)
+    checks = system_checks.check_docker_tools(tmp_path)
+    assert any(check.level == system_checks.WARN and "windows.yml" in check.name for check in checks)

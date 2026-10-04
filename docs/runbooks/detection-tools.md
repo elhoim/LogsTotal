@@ -111,7 +111,7 @@ Put your rules outside the install directory and point the task's `rules_path` a
 ```yaml
 tasks:
   - tool: hayabusa
-    tool_path: tools/hayabusa/hayabusa-intel-lin
+    profile: default
     rules_path: /srv/sigma/hayabusa-rules/    # outside the install — upgrades leave it alone
 ```
 
@@ -124,7 +124,11 @@ docker pull wagga40/zircolite:<new-version>
 docker inspect --format='{{index .RepoDigests 0}}' wagga40/zircolite:<new-version>
 ```
 
-Put that `repo@sha256:…` in every `docker_image:` line in `workflows/*.yml`, keeping the `:<version>@` form so the tag stays readable, then load the workflows again (see [Workflows](#workflows)). Test the new image before relying on it.
+Add a `docker_image: repo:<version>@sha256:…` override to the Zircolite tasks you want to
+update, then load the workflows again (see [Workflows](#workflows)). Without an override,
+the shipped profiles use the release's shared image pin. Test the new image before relying
+on it. When maintaining a LogsTotal release, update the shared pin in the tool catalog once;
+the profiles and offline bundle inventory use that same value.
 
 ## Workflows
 
@@ -140,22 +144,25 @@ An excerpt from the shipped `workflows/windows_full.yml`:
 ```yaml
 tasks:
   - tool: chainsaw
-    tool_path:                                    # per-architecture binaries
-      x86_64-linux: tools/chainsaw/chainsaw-intel-lin
-      aarch64-linux: tools/chainsaw/chainsaw-arm-lin
-      aarch64-darwin: tools/chainsaw/chainsaw-mac
-    rules_path:                                   # a list: one --sigma per entry
-      - tools/chainsaw/sigma/rules
-      - tools/chainsaw/sigma/rules-emerging-threats
-      - tools/chainsaw/sigma/rules-threat-hunting
+    profile: default                             # binaries and curated rule directories
     timeout: 300                                  # per-task execution timeout in seconds
     threads: 2                                    # CPU threads for this tool
   - tool: zircolite
-    # Runs as a container; pinned by digest (see "Moving the Zircolite image pin").
-    docker_image: wagga40/zircolite:4.0.0@sha256:552f1900fb5533a58fdad1ae61f46c09018271787d5d7a2d08cb318d3221461f
-    rules_path: tools/zircolite/rules/rules_windows_merged.json
+    profile: windows                             # pinned container and Windows rules
     timeout: 300
 ```
+
+Profiles are optional. Hayabusa, Chainsaw, ChopChopGo and RSigma provide `default`;
+Zircolite provides `windows`, `linux` and `journald`. A task without `profile` keeps its
+existing explicit configuration. Adding a profile supplies reusable paths and settings;
+the workflow still chooses its tools, accepted log types, timeout and thread limits.
+
+Explicit task values override profile defaults. Lists and architecture maps replace their
+defaults; keys under `options` merge individually.
+An explicit `tool_path`, `docker_image` or `dockerfile` replaces the profile's execution
+choice. For example, a local Zircolite `tool_path` removes its default Docker image.
+Select one execution method per task. A profile does not make an engine support additional
+log types: incompatible engines in a mixed workflow are still skipped.
 
 > [!NOTE]
 > **Name Chainsaw rule directories individually.** `tools/chainsaw/sigma/` holds five SigmaHQ rule sets: `rules`, `rules-emerging-threats`, `rules-threat-hunting`, `rules-dfir` and `rules-compliance`. The shipped workflow uses the first three; add the others to `rules_path` if you want them. Chainsaw loads a directory recursively, so pointing `rules_path` at `tools/chainsaw/sigma/` itself would load all five at once. The deprecated and unsupported SigmaHQ sets are not shipped.
@@ -165,8 +172,9 @@ tasks:
 | Key | Meaning |
 |-----|---------|
 | `tool` | `zircolite`, `chainsaw`, `hayabusa`, `chopchopgo` or `rsigma` |
+| `profile` | Optional named defaults: Zircolite `windows`, `linux`, `journald`; other tools `default`. Explicit task settings override them |
 | `tool_path` | Path to the binary: a string, or a map keyed by `{arch}-{os}` (`x86_64-linux`, `aarch64-linux`, `aarch64-darwin`). A task with no entry for the host's architecture is skipped with a message instead of failing the job |
-| `docker_image` | Run the tool from this container image instead of a binary. The shipped Zircolite tasks use it. Takes precedence over `tool_path` if both are set |
+| `docker_image` | Run the tool from this container image. The shipped Zircolite profiles use it. Select one execution method; legacy tasks with both a usable `tool_path` and a Docker image run the local binary |
 | `dockerfile` | Build the image from a Dockerfile instead of pulling it |
 | `rules_path` | The rules for this task — a directory or a compiled bundle, depending on the tool. May be a **list** of directories, which Chainsaw turns into one `--sigma` option each. A container-run tool accepts a single path and refuses a list |
 | `timeout` | Execution timeout in seconds. The tool's whole process group is killed when it expires |

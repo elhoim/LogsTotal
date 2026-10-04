@@ -30,7 +30,7 @@ from app.intel.tactics import (
     primary_tactic_from_tags,
 )
 from app.tools.catalog import TOOLS, output_tool
-from app.tools.output import event_timestamp
+from app.tools.event_fields import EventView
 from app.tools.registry import get_adapter_class
 
 _log = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ def _iter_output_files(job_dir: Path) -> Iterator[Path]:
 
 def extract_timestamp(event: dict) -> str | None:
     """Extract a timestamp string from a single event dict (any tool format)."""
-    return event_timestamp(event)
+    return EventView(event).timestamp
 
 
 def parse_single_output_file(
@@ -435,20 +435,7 @@ def _event_computer(event: dict) -> str | None:
     the computer, so on a multi-host Chainsaw job it would merge two hosts' alerts into one
     marker and label it with neither.
     """
-    comp = event.get("Computer") or event.get("computer")
-    if isinstance(comp, str) and comp:
-        return comp
-
-    for root in (event, (event.get("document") or {}).get("data") if isinstance(event.get("document"), dict) else None):
-        if not isinstance(root, dict):
-            continue
-        evtx_sys = (root.get("Event") or {}).get("System") if isinstance(root.get("Event"), dict) else None
-        if isinstance(evtx_sys, dict):
-            c = evtx_sys.get("Computer")
-            if isinstance(c, str) and c:
-                return c
-
-    return None
+    return EventView(event).computer
 
 
 def build_key_events(

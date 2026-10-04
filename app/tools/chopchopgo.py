@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-import logging
 import time
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 from app.json_utils import dumps as json_dumps
 from app.json_utils import loads as json_loads
-from app.tools.base import NormalizedFinding, ToolAdapter, ToolOutput
+from app.tools.base import ToolAdapter, ToolOutput
 from app.tools.catalog import TOOLS
-from app.tools.output import RawMatch, event_timestamp, json_records
+from app.tools.mapping import MetadataMapping, OutputMapping, Selector, list_tags
 from app.yaml_utils import safe_load as yaml_safe_load
-
-_log = logging.getLogger(__name__)
 
 
 class ChopChopGoAdapter(ToolAdapter):
@@ -33,6 +29,19 @@ class ChopChopGoAdapter(ToolAdapter):
     """
 
     name = "chopchopgo"
+    output_mapping = OutputMapping(
+        finding=MetadataMapping(
+            rule_name=Selector((("Title",),), default="Unknown Rule", transforms=(str,)),
+            rule_id=Selector((("ID",),), default="", transforms=(str,)),
+            tags=Selector((("Tags",),), default=[], transforms=(list_tags,)),
+        ),
+        raw_overrides={
+            "rule_name": Selector((("Title",),), default="", fallback="missing"),
+            "rule_id": Selector((("ID",),), default="", fallback="missing"),
+            "tags": Selector(default=[]),
+        },
+        rule_metadata=lambda adapter, rule_id: adapter._rule_severity(rule_id),
+    )
 
     # journald is NOT supported: ChopChopGo's journald target reads the live systemd
     # journal via the sd-journal API and rejects -file, so it cannot analyze an
@@ -48,15 +57,7 @@ class ChopChopGoAdapter(ToolAdapter):
             return str(self._log_type)
         return "syslog"
 
-    @classmethod
-    def iter_raw_matches(cls, path: Path):
-        for event in json_records(path, jsonl=False):
-            yield RawMatch(event, event.get("Title", ""), event.get("ID", ""), None, timestamp=event_timestamp(event))
-
     # ── subclass hooks ───────────────────────────────────────────────────
-
-    def _output_filename(self, file_path: Path) -> str:
-        return file_path.stem + TOOLS["chopchopgo"].output_suffix
 
     def _build_local_cmd(
         self,
@@ -142,49 +143,6 @@ class ChopChopGoAdapter(ToolAdapter):
             if isinstance(parsed, list):
                 return parsed
         return None
-
-    # ── normalize ────────────────────────────────────────────────────────
-
-    def normalize(self, raw: Any) -> list[NormalizedFinding]:
-        """
-        ChopChopGo JSON output: a list of per-matched-event objects
-        ``{Timestamp, Message, User, Exe, Terminal, PID, Tags, Author, ID, Title}``.
-        Group events by rule title; severity comes from the Sigma rule YAML.
-        """
-        grouped: dict[str, NormalizedFinding] = {}
-        severity_cache: dict[str, tuple[str, str]] = {}
-        skipped = 0
-
-        for event in self._dict_records(raw):
-            try:
-                title = str(event.get("Title") or "Unknown Rule")
-                rule_id = str(event.get("ID") or "")
-
-                finding = grouped.get(title)
-                if finding is None:
-                    severity, rule_content = severity_cache.get(rule_id) or self._rule_severity(rule_id)
-                    severity_cache[rule_id] = (severity, rule_content)
-                    tags = event.get("Tags") or []
-                    finding = NormalizedFinding(
-                        rule_name=title,
-                        severity=severity,
-                        count=0,
-                        rule_id=rule_id,
-                        tags=tags if isinstance(tags, list) else [str(tags)],
-                        rule_content=rule_content,
-                    )
-                    grouped[title] = finding
-
-                finding.count += 1
-                if len(finding.details) < self.max_details:
-                    finding.details.append(event)
-            except Exception:
-                # Per-record isolation — see the same guard in the Hayabusa adapter.
-                skipped += 1
-
-        if skipped:
-            _log.warning("chopchopgo: skipped %d unparseable event(s)", skipped)
-        return list(grouped.values())
 
     def _rule_severity(self, rule_id: str) -> tuple[str, str]:
         """Return (normalized severity, rule YAML text) for a Sigma rule id."""
