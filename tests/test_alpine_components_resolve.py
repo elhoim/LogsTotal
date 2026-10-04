@@ -22,6 +22,7 @@ APP = Path(__file__).resolve().parent.parent / "app"
 TEMPLATES = APP / "templates"
 STATIC_JS = [
     APP / "static" / "app.js",
+    APP / "static" / "account-menu.js",
     APP / "static" / "graph.js",
     APP / "static" / "timeline.js",
 ]
@@ -99,7 +100,7 @@ def test_our_js_is_loaded_before_alpine():
     """
     base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
     alpine = base.index("/static/vendor/alpine.min.js")
-    for asset in ("/static/app.js", "/static/graph.js", "/static/timeline.js", "/static/timeline-canvas.js"):
+    for asset in ("/static/app.js", "/static/account-menu.js", "/static/graph.js", "/static/timeline.js", "/static/timeline-canvas.js"):
         assert asset in base, f"{asset} is not loaded from base.html"
         assert base.index(asset) < alpine, f"{asset} must be listed before alpine.min.js or its Alpine factories will not exist at Alpine.start()"
 
@@ -124,7 +125,7 @@ def test_first_party_static_assets_are_cache_busted_by_mtime():
     code change — which is how an already-fixed JS bug kept reproducing in the browser.
     """
     base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
-    for asset in ("app.js", "graph.js", "themes.css", "timeline.js", "timeline-canvas.js"):
+    for asset in ("app.js", "account-menu.js", "graph.js", "themes.css", "timeline.js", "timeline-canvas.js"):
         match = re.search(rf"/static/{re.escape(asset)}\?v=\{{\{{\s*(.+?)\s*\}}\}}", base)
         assert match, f"{asset} is not referenced with a cache-buster in base.html"
         expr = match.group(1)
