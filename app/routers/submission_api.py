@@ -72,10 +72,16 @@ async def submission_statuses(
         )
     ).all()
     found = {row.id for row in rows}
+    # Same gate as the job page: raw failure detail (worker exception text) is admin-only.
+    detailed = access.user is not None and access.user.is_superuser
+
+    def error(row):
+        if not row.error_message or detailed or enum_val(row.status) == "cancelled":
+            return row.error_message
+        return "The analysis did not complete successfully."
+
     return {
-        "jobs": [
-            {"job_id": row.id, "status": enum_val(row.status), "total_findings": row.total_findings, "error": row.error_message, "job_url": f"/jobs/{row.id}"} for row in rows
-        ],
+        "jobs": [{"job_id": row.id, "status": enum_val(row.status), "total_findings": row.total_findings, "error": error(row), "job_url": f"/jobs/{row.id}"} for row in rows],
         "unavailable_ids": [jid for jid in dict.fromkeys(job_ids) if jid not in found],
     }
 

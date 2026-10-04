@@ -285,3 +285,35 @@ async def test_case_timeline_unions_groupings(test_client, tl_data, admin_user):
     await _login(test_client, admin_user.email)
     body = (await test_client.get(f"/intel/cases/{tl_data['case'].id}/events-timeline")).json()
     assert body["groupings"] == ["execution"]
+
+
+# ── The admin switch ─────────────────────────────────────────────────────────
+
+
+async def _alert_timeline_off(async_db):
+    from app.site_settings import get_site_settings
+
+    site = await get_site_settings(async_db)
+    site.show_alert_timeline = False
+    await async_db.commit()
+
+
+async def test_job_timeline_honours_the_site_setting(test_client, tl_data, async_db):
+    """Off hides the panel from every viewer — the template alone is not the gate.
+
+    `_analytics.html` only stops mounting the panel; this route is anonymous-viewable for a
+    public job, so it has to refuse on its own.
+    """
+    await _alert_timeline_off(async_db)
+    resp = await test_client.get(f"/jobs/{tl_data['job_pub'].id}/events-timeline")
+    assert resp.status_code == 404
+    assert "Public Rule" not in resp.text
+
+
+async def test_case_timeline_honours_the_site_setting(test_client, tl_data, admin_user, async_db):
+    """Same switch, same rule on the case surface — admins included."""
+    await _alert_timeline_off(async_db)
+    await _login(test_client, admin_user.email)
+    resp = await test_client.get(f"/intel/cases/{tl_data['case'].id}/events-timeline")
+    assert resp.status_code == 404
+    assert "Public Rule" not in resp.text

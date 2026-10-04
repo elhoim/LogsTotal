@@ -13,7 +13,8 @@ that do not cost that flexibility:
   * `follow_redirects=False`, so a 302 cannot walk the request somewhere else;
   * the response body is never read, stored, logged or surfaced;
   * a total HTTP deadline across validated addresses and a per-rule rate limit;
-  * `169.254.169.254` is blocked unconditionally — the cloud metadata address is the one
+  * the cloud metadata addresses (`169.254.169.254`, the rest of link-local, and the other
+    providers' endpoints in `_BLOCKED_NETWORKS`) are blocked unconditionally — the one
     target with no legitimate receiver and catastrophic downside;
   * `WEBHOOK_REQUIRE_PUBLIC_HOST=true` restores the strict `live_enrichment` behaviour
     (public IPs only, DNS-rebinding-safe pinning) for deployments with untrusted members.
@@ -54,23 +55,40 @@ __all__ = [
 ]
 
 
-def _looks_like_ip(value: str) -> bool:
-    try:
-        ipaddress.ip_address(value)
-    except ValueError:
-        return False
-    return True
-
-
 # The cloud metadata endpoint. No real receiver lives here and reaching it from a worker
 # yields instance credentials, so it stays blocked regardless of the public-host setting.
+# Refused by name at save time; every IP literal here also falls inside _BLOCKED_NETWORKS.
 BLOCKED_HOSTS = frozenset({"169.254.169.254", "metadata.google.internal", "fd00:ec2::254"})
 
-# The same addresses parsed, for comparing against *resolved* IPs. Matching on the string
-# form is not enough there: `fd00:ec2::254` also spells as `fd00:ec2:0:0:0:0:0:254`, and
-# `ipaddress` normalises both to one object. The set is derived from BLOCKED_HOSTS rather
-# than written out again, so adding an address in one place cannot miss the other.
-_BLOCKED_IPS = frozenset(ipaddress.ip_address(h) for h in BLOCKED_HOSTS if _looks_like_ip(h))
+# The cloud credential endpoints, as networks, for comparing against literal and *resolved*
+# IPs. Matching on the string form is not enough there: `fd00:ec2::254` also spells as
+# `fd00:ec2:0:0:0:0:0:254`, and `ipaddress` normalises both to one object.
+#
+# * 169.254.0.0/16 — IPv4 link-local. Every provider's IMDS sits at .169.254, AWS ECS task
+#   credentials at .170.2 and EKS Pod Identity at .170.23. Nothing link-local is a webhook
+#   receiver, so the whole range goes rather than a list that misses the next endpoint.
+# * fd00:ec2::/64 — AWS's IPv6 service block (IMDS ::254, EKS Pod Identity ::23).
+# * The rest are single hosts. Alibaba's 100.100.100.200 is inside CGNAT 100.64.0.0/10,
+#   where Tailscale nodes live, so the range is not widened. Azure's WireServer is globally
+#   routable, so `require_public` alone never catches it.
+_BLOCKED_NETWORKS = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "169.254.0.0/16",
+        "fd00:ec2::/64",
+        "fd20:ce::254/128",  # Google Cloud IPv6 metadata
+        "100.100.100.200/32",  # Alibaba Cloud metadata
+        "192.0.0.192/32",  # Oracle Cloud legacy metadata
+        "168.63.129.16/32",  # Azure WireServer
+    )
+)
+
+
+def _is_blocked_ip(ip) -> bool:
+    """True for a metadata address, IPv4-mapped spellings included. Shared by every guard."""
+    ip = _unwrap_ipv4_mapped(ip)
+    return any(ip in net for net in _BLOCKED_NETWORKS)
+
 
 WEBHOOK_MAX_ENTITIES = 50  # payload cap; the full count is still reported
 _UA = "LogsTotal-Webhook/1"
@@ -255,7 +273,7 @@ def validate_url_syntax(url: str) -> None:
         literal = ipaddress.ip_address(parsed.hostname)
     except ValueError:
         literal = None
-    if literal is not None and _unwrap_ipv4_mapped(literal) in _BLOCKED_IPS:
+    if literal is not None and _is_blocked_ip(literal):
         raise WebhookError("that host is not allowed")
 
 
@@ -314,7 +332,7 @@ def validate_url_addresses(url: str, *, require_public: bool = False, public_set
         # Not `ip.is_link_local and ...`: fd00:ec2::254 is unique-local, not link-local,
         # so that conjunct would block the EC2 IPv6 metadata address only when written as
         # a URL literal, never when reached through a hostname.
-        if ip in _BLOCKED_IPS:
+        if _is_blocked_ip(ip):
             raise WebhookError("that host is not allowed")
         if require_public and not ip.is_global:
             raise WebhookError(f"{public_setting_name} is set and this host resolves to a private address")

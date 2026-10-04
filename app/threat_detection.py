@@ -7,10 +7,12 @@ from __future__ import annotations
 
 import math
 import os
-import re
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+import regex
 
 from app.config import settings
 from app.constants import SEVERITY_RANK as _SEVERITY_RANK
@@ -153,7 +155,7 @@ def _compile_config(raw: dict) -> dict:
                             # entry to carry `(?i)`: one that forgot would miss
                             # `invoice.pdf.EXE` — exactly the casing an attacker would use.
                             # No shipped pattern depends on case-sensitive matching.
-                            "regex": re.compile(p["pattern"], re.IGNORECASE),
+                            "regex": regex.compile(p["pattern"], regex.IGNORECASE | regex.VERSION0),
                             "severity": p.get("severity", cat.get("default_severity", "medium")),
                         }
                     )
@@ -218,10 +220,36 @@ def get_threat_config() -> dict:
 
 _MatchResult = dict[str, tuple[int, str, str]]
 
+# Limit matching work across the whole analytics pass, including separate add() calls.
+# Full fields and the shipped patterns remain intact; a timeout is reported as partial.
+REGEX_MATCH_SECONDS = 0.02
+REGEX_TOTAL_SECONDS = 5.0
 
-def _check_regex(check: dict, scan_dicts: list[dict]) -> _MatchResult:
+
+class _RegexBudget:
+    def __init__(self):
+        self.remaining = REGEX_TOTAL_SECONDS
+        self.timeouts = 0
+        self.exhausted = False
+
+    def search(self, pattern, value):
+        if self.remaining <= 0:
+            self.exhausted = True
+            return None
+        started = time.monotonic()
+        try:
+            return pattern.search(value, timeout=min(REGEX_MATCH_SECONDS, self.remaining))
+        except TimeoutError:
+            self.timeouts += 1
+            return None
+        finally:
+            self.remaining -= time.monotonic() - started
+
+
+def _check_regex(check: dict, scan_dicts: list[dict], budget: _RegexBudget | None = None) -> _MatchResult:
     """Returns {PATTERN_NAME: (1, severity, matched_excerpt)} for matched patterns."""
     results: _MatchResult = {}
+    budget = budget if budget is not None else _RegexBudget()
     fields = check.get("fields", [])
     for pat_info in check.get("compiled_patterns", []):
         name = pat_info["name"].upper()
@@ -233,7 +261,7 @@ def _check_regex(check: dict, scan_dicts: list[dict]) -> _MatchResult:
             for fld in fields:
                 val = d.get(fld)
                 if isinstance(val, str):
-                    m = regex.search(val)
+                    m = budget.search(regex, val)
                     if m:
                         excerpt = _smart_excerpt(val, m.start(), m.end())
                         results[name] = (1, severity, excerpt)
@@ -412,9 +440,10 @@ class ThreatAccumulator:
     Not thread-safe: the caller serialises ``add()``.
     """
 
-    __slots__ = ("_accum", "_cat_checks", "_config")
+    __slots__ = ("_accum", "_cat_checks", "_config", "_regex_budget")
 
     def __init__(self) -> None:
+        self._regex_budget = _RegexBudget()
         self._config = get_threat_config()
         # Pre-build (cat_key, checks_list) to avoid dict iteration overhead per event.
         self._cat_checks: list[tuple[str, list[dict]]] = [(cat_key, cat_cfg["checks"]) for cat_key, cat_cfg in (self._config or {}).items()]
@@ -431,7 +460,7 @@ class ThreatAccumulator:
                 handler = _CHECK_DISPATCH.get(check["type"])
                 if handler is None:
                     continue
-                matches = handler(check, scan_dicts)
+                matches = handler(check, scan_dicts, self._regex_budget) if check["type"] == "regex" else handler(check, scan_dicts)
                 for tag, (_count, severity, matched_val) in matches.items():
                     event_hits.add((tag, severity, matched_val))
 
@@ -491,6 +520,11 @@ class ThreatAccumulator:
             "total_indicators": total_indicators,
             "total_categories": total_categories,
             "categories": categories,
+            **(
+                {"incomplete": True, "regex_timeouts": self._regex_budget.timeouts, "regex_budget_exhausted": self._regex_budget.exhausted}
+                if self._regex_budget.timeouts or self._regex_budget.exhausted
+                else {}
+            ),
         }
 
 

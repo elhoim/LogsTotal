@@ -96,4 +96,20 @@ describe('mermaid initialize() config', () => {
     }
     assert.ok(keys.has('theme'), "'theme' is not in mermaid's default secure list, so it must be added explicitly");
   });
+
+  /* `themeCSS` is compiled into the diagram's own <style>, scoped under `#lt-mermaid-N`, but
+     a `&` selector is that id itself: `%%{init: {"themeCSS": "&{position:fixed;width:100vw;
+     height:100vh;z-index:2147483647}"}}%%` lifts the SVG out of its box and over the whole
+     page (measured on the vendored 11.16.0 in Chromium: an opaque 1280x800 layer). And
+     `%%{init: {"htmlLabels": true}}%%` brings back the <foreignObject> labels note 2 turns
+     off. Diagrams come from comments and case notes other members read, and from model
+     output over attacker-written logs, so no key that feeds the stylesheet or undoes the
+     label hardening may be settable from the diagram source. */
+  it('pins every CSS-bearing key and htmlLabels', () => {
+    const m = SRC.match(/secure:\s*\[([^\]]*)\]/);
+    const keys = new Set(m[1].match(/'([^']+)'/g).map((s) => s.slice(1, -1)));
+    for (const k of ['themeCSS', 'themeVariables', 'fontFamily', 'altFontFamily', 'htmlLabels', 'dompurifyConfig']) {
+      assert.ok(keys.has(k), `'${k}' must be in the secure list, or a diagram's %%{init}%% directive can set it`);
+    }
+  });
 });

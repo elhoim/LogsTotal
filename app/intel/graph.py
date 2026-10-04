@@ -399,16 +399,24 @@ def _globally_hot_job_ids(*, fanout: int | None = None) -> Select:
     return select(EntityJobLink.job_id).group_by(EntityJobLink.job_id).having(func.count(func.distinct(EntityJobLink.entity_id)) > threshold)
 
 
-def _hot_job_ids(entity_ids: list[int], *, fanout: int = MAX_JOB_FANOUT) -> Select:
+def _hot_job_ids(entity_ids: list[int], *, viewer, fanout: int = MAX_JOB_FANOUT) -> Select:
     """Near-clique jobs **in this picture**: those touching the node set, wide overall.
 
     Width is counted over the job's whole entity set, not just the part inside the graph.
     Counted over the restriction, a job linking 5,000 entities with four on screen would be
     "4 wide" — not a near-clique, so its edges drawn — and would disagree with the traversal
     guard above, leaving `stats.job_fanout_suppressed` at 0 where the guard had fired.
+
+    Filtered through ``visible_job_filter(viewer)``: its count is shown as
+    `stats.job_fanout_suppressed`, and over every job it would tell a member that the
+    entities they chose co-occur in a wide job they cannot see.
     """
     touching = select(EntityJobLink.job_id).where(EntityJobLink.entity_id.in_(entity_ids))
-    return _globally_hot_job_ids(fanout=fanout).where(EntityJobLink.job_id.in_(touching))
+    stmt = _globally_hot_job_ids(fanout=fanout).where(EntityJobLink.job_id.in_(touching))
+    vis = visible_job_filter(viewer)
+    if vis is not True:
+        stmt = stmt.where(EntityJobLink.job_id.in_(select(AnalysisJob.id).where(vis)))
+    return stmt
 
 
 def _job_pair_lohi(entity_ids: list[int], viewer, job_id: int | None = None):
@@ -518,7 +526,7 @@ async def _job_co_edges(
     if job_id:
         stmt = stmt.where(a.job_id == job_id)
     if fanout:
-        hot = _hot_job_ids(entity_ids, fanout=fanout).subquery()
+        hot = _hot_job_ids(entity_ids, viewer=viewer, fanout=fanout).subquery()
         suppressed = int(await db.scalar(select(func.count()).select_from(hot)) or 0)
         if suppressed:
             stmt = stmt.where(a.job_id.notin_(select(hot.c.job_id)))
@@ -804,7 +812,7 @@ async def build_entity_graph(
         # traversal declined them, nothing was discovered, and the guard would silently
         # report 0 for a graph it had emptied. Only reached on that early-return path, so
         # it costs a query exactly when there were no edges to pay for anyway.
-        hot = _hot_job_ids(node_ids).subquery()
+        hot = _hot_job_ids(node_ids, viewer=viewer).subquery()
         suppressed = max(suppressed, int(await db.scalar(select(func.count()).select_from(hot)) or 0))
     focal_co = await _focal_edges(db, node_ids, int(focal_row.id), viewer=viewer, job_id=job_id)
     job_co = {**focal_co, **job_co}

@@ -588,6 +588,42 @@ async def test_the_job_page_route_still_takes_no_entity(member_client, async_db)
     assert set(inspect.signature(job_process_tree).parameters) == {"job_id", "request", "db", "user"}
 
 
+@pytest.mark.parametrize("who", ["anonymous", "user", "member", "admin"])
+@pytest.mark.asyncio
+async def test_the_job_page_route_honours_the_site_setting(who, test_client, regular_user, member_user, admin_user, async_db, monkeypatch):
+    """The switch hides the panel from every viewer — the template alone is not the gate.
+
+    `_job_status.html` only stops emitting the `hx-get`; the route is anonymous-viewable
+    for a public job, so it has to refuse on its own, like its Intel and case twins.
+    """
+    import app.intel.process_tree as pt_module
+    from app.site_settings import get_site_settings
+
+    seeded = await _seed_case_with_job(async_db)
+    calls: list[int] = []
+
+    def _fake(job_id, **kw):
+        calls.append(job_id)
+        return build_process_forest([_sysmon(100, 4, r"C:\Tools\secret-lineage.exe", cmdline="secret-lineage.exe -p hunter2")])
+
+    monkeypatch.setattr(pt_module, "build_job_forest_sync", _fake)
+    if who != "anonymous":
+        resp = await test_client.post("/auth/cookie/login", data={"username": f"{who}@test.example.com", "password": "testpass123"})
+        assert resp.status_code in (200, 204, 303)
+
+    on = await test_client.get(f"/jobs/{seeded['job'].id}/process-tree")
+    assert on.status_code == 200 and "secret-lineage.exe" in on.text, "control: the panel renders while the switch is on"
+
+    site = await get_site_settings(async_db)
+    site.show_process_tree = False
+    await async_db.commit()
+    calls.clear()
+
+    off = await test_client.get(f"/jobs/{seeded['job'].id}/process-tree")
+    assert "secret-lineage.exe" not in off.text
+    assert calls == [], "the switch must stop the raw-output parse, not just the render"
+
+
 def test_pruned_stats_are_all_recounted_not_just_some():
     """Mixing a recounted `processes` with a stale `hits` is worse than either alone.
 

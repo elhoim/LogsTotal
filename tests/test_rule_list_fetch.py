@@ -283,6 +283,30 @@ class TestTheFormAndTheButton:
     async def test_a_member_may_not_refresh(self, member_client, a_list):
         assert (await member_client.post(f"/intel/rules/lists/{a_list.id}/refresh")).status_code == 403
 
+    async def test_a_member_never_sees_the_feed_url_or_its_error(self, member_client, async_db, a_list):
+        """The URL is admin-only to set, and a keyed feed can only carry its key in the query
+        string — so the Lists tab must not hand it to every member in a tooltip."""
+        from app.database import utc_now_naive
+
+        a_list.source_url = "https://feed.vendor.example/iocs.txt?apikey=SECRETKEY"
+        a_list.last_fetched_at = utc_now_naive()
+        a_list.last_fetch_ok = True
+        await async_db.commit()
+        page = await member_client.get("/intel/rules")
+        assert page.status_code == 200 and "fetched" in page.text
+        assert "SECRETKEY" not in page.text
+        a_list.last_fetch_ok = False
+        a_list.last_fetch_error = "Client error '401' for url 'https://feed.vendor.example/iocs.txt?apikey=SECRETKEY'"
+        await async_db.commit()
+        page = await member_client.get("/intel/rules")
+        assert "fetch failed" in page.text and "SECRETKEY" not in page.text
+
+    async def test_an_admin_still_sees_the_feed_url(self, admin_client, async_db, a_list):
+        a_list.source_url = "https://feed.vendor.example/iocs.txt?apikey=SECRETKEY"
+        await async_db.commit()
+        page = await admin_client.get("/intel/rules")
+        assert 'title="https://feed.vendor.example/iocs.txt?apikey=SECRETKEY"' in page.text
+
     async def test_a_failed_refresh_reports_and_keeps_the_values(self, admin_client, async_db, a_list, monkeypatch):
         a_list.source_url = "https://example.org/f.txt"
         await async_db.commit()

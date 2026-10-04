@@ -351,14 +351,17 @@
         Three states, not two. `last_fetch_ok` is NULL until the first attempt, and "never
         tried" must not render as "failed" — an admin who has just bound a URL would go
         looking for a problem that has not happened yet.
+
+        The URL and the fetch error are for admins only: a keyed feed can only carry its key
+        in the query string, and a member needs the state, not the address.
       #}
       {% if l.row.source_url %}
         {% if l.row.last_fetch_ok is none %}
-        <span class="shrink-0 text-[11px] text-gray-600" title="{{ l.row.source_url }}">&rarr; from a feed</span>
+        <span class="shrink-0 text-[11px] text-gray-600" {% if user.is_superuser %}title="{{ l.row.source_url }}"{% endif %}>&rarr; from a feed</span>
         {% elif l.row.last_fetch_ok %}
-        <span class="shrink-0 text-[11px] text-gray-600" title="{{ l.row.source_url }}">&rarr; fetched {{ l.row.last_fetched_at | time_ago }}</span>
+        <span class="shrink-0 text-[11px] text-gray-600" {% if user.is_superuser %}title="{{ l.row.source_url }}"{% endif %}>&rarr; fetched {{ l.row.last_fetched_at | time_ago }}</span>
         {% else %}
-        <span class="shrink-0 text-[11px] text-red-400" title="{{ l.row.last_fetch_error }}">&rarr; fetch failed {{ l.row.last_fetched_at | time_ago }}</span>
+        <span class="shrink-0 text-[11px] text-red-400" {% if user.is_superuser %}title="{{ l.row.last_fetch_error }}"{% endif %}>&rarr; fetch failed {{ l.row.last_fetched_at | time_ago }}</span>
         {% endif %}
       {% endif %}
     </div>

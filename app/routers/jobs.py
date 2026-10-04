@@ -1060,6 +1060,11 @@ async def job_process_tree(
         return HTMLResponse("")
     if not _can_view_private(job, user):
         raise HTTPException(404)
+    # The admin switch hides the panel from every viewer. The template only stops emitting
+    # the hx-get, so this route has to refuse too — as its Intel and case twins do.
+    site_settings = await get_site_settings(db)
+    if not site_settings.show_process_tree:
+        return HTMLResponse("")
 
     forest = await load_job_forest(job_id)
 
@@ -1303,6 +1308,9 @@ async def job_events_timeline(
     if not job:
         raise HTTPException(404)
     if not _can_view_private(job, user):
+        raise HTTPException(404)
+    # The admin switch hides the panel from every viewer; the template only stops mounting it.
+    if not (await get_site_settings(db)).show_alert_timeline:
         raise HTTPException(404)
 
     # Query the column explicitly rather than touching ``job.event_markers``: it is
@@ -1896,7 +1904,7 @@ def _hydrate_analytics(data: dict) -> dict:
 
     # Key each threat-detection category and sort by severity, then by total
     td = data.get("threat_detection", {})
-    if td and td.get("categories"):
+    if td and (td.get("categories") or td.get("incomplete")):
         _sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "informational": 4}
         hydrated_td = dict(td)
         sorted_cats = []

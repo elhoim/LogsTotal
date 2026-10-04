@@ -5,14 +5,14 @@ import json
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.auth.api_tokens import generate_token
 from app.config import settings
 from app.database import get_async_session
 from app.main import app
-from app.models import AnalysisJob, ApiToken, CaseEntityLink, CaseJobLink, InvestigationCase, LogFile, SubmissionReceipt, User, WorkflowDef
+from app.models import AnalysisJob, ApiToken, CaseEntityLink, CaseJobLink, InvestigationCase, JobStatus, LogFile, SubmissionReceipt, User, WorkflowDef
 from tests.helpers import create_schema
 
 EVTX = b"ElfFile\x00" + b"\x00" * 100
@@ -171,6 +171,21 @@ async def test_private_jobs_are_hidden_in_grouped_status_and_other_receipts(user
     assert (await user_client.get("/api/v1/submissions/secret")).status_code == 401
     assert (await user_client.get("/api/v1/jobs?ids=" + ",".join("1" for _ in range(51)))).status_code == 400
     assert (await user_client.get("/api/v1/jobs?ids=1,nope")).status_code == 400
+
+
+async def test_grouped_status_hides_raw_failure_detail_like_the_job_page(user_client, async_db, workflow, admin_user):
+    # The job page shows a failed job's error_message to admins only; polling must not bypass that.
+    failed = (await submit(user_client, workflow)).json()["job_id"]
+    cancelled = (await submit(user_client, workflow, body=EVTX + b"other")).json()["job_id"]
+    raw = "(sqlite3.OperationalError) database is locked [SQL: UPDATE tool_results SET log_output=?] /app/uploads/job_1"
+    await async_db.execute(update(AnalysisJob).where(AnalysisJob.id == failed).values(status=JobStatus.FAILED, error_message=raw))
+    await async_db.execute(update(AnalysisJob).where(AnalysisJob.id == cancelled).values(status=JobStatus.CANCELLED, error_message="Cancelled by the submitter"))
+    await async_db.commit()
+    user_client.cookies.clear()
+    for headers in (None, await token(async_db, admin_user, ["job:read"])):
+        jobs = {j["job_id"]: j for j in (await user_client.get(f"/api/v1/jobs?ids={failed},{cancelled}", headers=headers)).json()["jobs"]}
+        assert jobs[cancelled]["error"] == "Cancelled by the submitter"
+        assert jobs[failed]["error"] == (raw if headers else "The analysis did not complete successfully.")
 
 
 async def test_queue_failure_keeps_case_and_receipt_recoverable(member_client, async_db, workflow, monkeypatch):
