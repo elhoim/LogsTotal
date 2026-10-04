@@ -17,6 +17,12 @@ Three roles, plus anonymous visitors:
 
 On `/admin/users`, pick `user`, `member` or `admin` in the user's role menu.
 
+### Change your own email or password
+
+Open your email dropdown in the top navigation and choose **Change email** or **Change password**. Both require your current password. These controls are available to every signed-in user.
+
+Changing your email keeps you signed in; use the new address at your next login. Changing your password ends all existing sessions, including the current one. The confirmation dialog offers **Sign in again**. **Logout** is also in the email dropdown.
+
 ### Lockout recovery
 
 If another administrator can sign in, ask them to reset your password on `/admin/users`.
