@@ -140,7 +140,7 @@ def primary_tactic_from_tags(tags: object) -> str | None:
 def _build_findings_index(
     job: AnalysisJob,
     *,
-    rule_meta: dict[str, tuple[str | None, str | None, int | None]] | None = None,
+    rule_meta: dict[str | tuple[str, str], tuple[str | None, str | None, int | None]] | None = None,
 ) -> tuple[dict[str, str], dict[str, str], dict[str, int]]:
     """Single-pass extraction of rule-tactic map, technique-tactic map,
     and MITRE tactic counts from DB findings.
@@ -148,7 +148,8 @@ def _build_findings_index(
     Returns ``(rule_tactic, technique_tactic, tactic_counts)``.
 
     ``rule_meta`` is an optional out-param: pass a dict and it is filled with
-    ``rule_name -> (rule_id, severity, finding_id)`` from the same walk, for the
+    ``(tool, rule_id or name) -> (rule_id, severity, finding_id)`` plus legacy
+    title fallbacks from the same walk, for the
     events-timeline marker index. An out-param rather than a fourth return value because
     every caller unpacks the arity; the point is to avoid a *second* pass over every
     finding, not to restructure them.
@@ -161,6 +162,10 @@ def _build_findings_index(
 
     for tr in job.task_results:
         for f in tr.findings:
+            if rule_meta is not None:
+                tool = getattr(tr, "tool_name", "")
+                rule_meta[(tool, f.rule_id or f.rule_name)] = (f.rule_id, getattr(f.severity, "value", f.severity), f.id)
+                rule_meta.setdefault((tool, f.rule_name), (f.rule_id, getattr(f.severity, "value", f.severity), f.id))
             if rule_meta is not None and f.rule_name not in rule_meta:
                 # ``Finding.severity`` is an Enum(Severity); unwrap to the plain string so
                 # the marker index stores "high" and not "Severity.HIGH" (a str-subclass

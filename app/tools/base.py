@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -18,6 +19,7 @@ from typing import Any
 
 from app.json_utils import load_file as json_load_file
 from app.json_utils import loads as json_loads
+from app.tools.output import RawMatch
 
 
 def apply_registry_prefix(image: str) -> str:
@@ -525,6 +527,11 @@ class ToolAdapter(ABC):
         """Return the expected output filename for this tool."""
         ...
 
+    @classmethod
+    def iter_raw_matches(cls, path: Path) -> Iterator[RawMatch]:
+        """Yield evidence with rule identity without constructing a configured adapter."""
+        raise NotImplementedError(f"{cls.name} does not define a raw event reader")
+
     @abstractmethod
     def normalize(self, raw: Any) -> list[NormalizedFinding]: ...
 
@@ -616,7 +623,9 @@ class ToolAdapter(ABC):
         return None
 
     @staticmethod
-    def _exec(cmd: list[str], timeout: int = 300, cancel_event: threading.Event | None = None) -> tuple[int, str, str]:
+    def _exec(
+        cmd: list[str], timeout: int = 300, cancel_event: threading.Event | None = None, *, stdout_path: Path | None = None, env: dict[str, str] | None = None
+    ) -> tuple[int, str, str]:
         """Run a subprocess and return (returncode, stdout, stderr).
 
         The child runs in its own process group so the timeout (or a job
@@ -626,51 +635,54 @@ class ToolAdapter(ABC):
         """
         if cancel_event is not None and cancel_event.is_set():
             return -1, "", CANCELLED_ERROR
-        try:
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                shell=False,  # Security invariant: never execute tool commands via a shell.
-                start_new_session=True,
-            )
-        except FileNotFoundError as exc:
-            return -1, "", f"Executable not found: {exc}"
-        except PermissionError:
-            binary_path = cmd[0] if cmd else "?"
-            return (
-                -1,
-                "",
-                f"Binary is not executable: {binary_path}. Try: chmod +x {binary_path}",
-            )
-
-        deadline = time.monotonic() + timeout
-        while True:
-            # communicate(timeout=tick), never wait(): wait() with full pipe
-            # buffers deadlocks; communicate() is safely re-callable after
-            # TimeoutExpired and keeps draining in reader threads.
-            tick = max(0.05, min(1.0, deadline - time.monotonic()))
+        with contextlib.ExitStack() as stack:
+            stdout_file = stack.enter_context(stdout_path.open("wb")) if stdout_path is not None else subprocess.PIPE
             try:
-                stdout, stderr = proc.communicate(timeout=tick)
-                return proc.returncode, stdout, stderr
-            except subprocess.TimeoutExpired:
-                cancelled = cancel_event is not None and cancel_event.is_set()
-                if not cancelled and time.monotonic() < deadline:
-                    continue
-                _kill_process_group(proc)
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=stdout_file,
+                    env=env,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    shell=False,  # Security invariant: never execute tool commands via a shell.
+                    start_new_session=True,
+                )
+            except FileNotFoundError as exc:
+                return -1, "", f"Executable not found: {exc}"
+            except PermissionError:
+                binary_path = cmd[0] if cmd else "?"
+                return (
+                    -1,
+                    "",
+                    f"Binary is not executable: {binary_path}. Try: chmod +x {binary_path}",
+                )
+
+            deadline = time.monotonic() + timeout
+            while True:
+                # communicate(timeout=tick), never wait(): wait() with full pipe
+                # buffers deadlocks; communicate() is safely re-callable after
+                # TimeoutExpired and keeps draining in reader threads.
+                tick = max(0.05, min(1.0, deadline - time.monotonic()))
                 try:
-                    proc.communicate(timeout=5)  # group is dead → pipes close → fast drain
+                    stdout, stderr = proc.communicate(timeout=tick)
+                    return proc.returncode, stdout or "", stderr
                 except subprocess.TimeoutExpired:
-                    # A double-forked daemon escaped the group and still holds
-                    # the pipes — give up on output rather than block the worker.
-                    for stream in (proc.stdout, proc.stderr):
-                        if stream is not None:
-                            with contextlib.suppress(Exception):
-                                stream.close()
-                if cancelled:
-                    return -1, "", CANCELLED_ERROR
-                return -1, "", f"Command timed out after {timeout}s"
+                    cancelled = cancel_event is not None and cancel_event.is_set()
+                    if not cancelled and time.monotonic() < deadline:
+                        continue
+                    _kill_process_group(proc)
+                    try:
+                        proc.communicate(timeout=5)  # group is dead → pipes close → fast drain
+                    except subprocess.TimeoutExpired:
+                        # A double-forked daemon escaped the group and still holds
+                        # the pipes — give up on output rather than block the worker.
+                        for stream in (proc.stdout, proc.stderr):
+                            if stream is not None:
+                                with contextlib.suppress(Exception):
+                                    stream.close()
+                    if cancelled:
+                        return -1, "", CANCELLED_ERROR
+                    return -1, "", f"Command timed out after {timeout}s"
 
     @staticmethod
     def _normalize_severity(raw: Any) -> str:

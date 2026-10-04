@@ -68,6 +68,13 @@ verify_archive() {
       fail "tools/go-task/task_${platform}.tar.gz missing — package.sh must not be run with PACKAGE_SKIP_GO_TASK for a release"
   done
 
+  # The catalog owns the engine inventory; adding a tool also extends both gates.
+  local tool_paths required
+  tool_paths=$(python3 "${SCRIPT_DIR}/detection_tools.py" artifacts) || fail "cannot read detection-tool inventory"
+  while IFS= read -r required; do
+    grep -Fxq "$required" "$listing" || fail "$required missing from the archive"
+  done <<<"$tool_paths"
+
   local entry
   for entry in "${FORBIDDEN_EXACT[@]}"; do
     grep -qx "$entry" "$listing" && fail "$entry present in the archive"
@@ -120,6 +127,28 @@ verify_image() {
     || fail "the image is missing the application"
   docker run --rm --entrypoint sh "$tag" -c "test -f /app/.env.example" \
     || fail "the image is missing the .env template"
+  local tool_paths
+  tool_paths=$(python3 "${SCRIPT_DIR}/detection_tools.py" artifacts) || fail "cannot read detection-tool inventory"
+  docker run --rm -i --entrypoint sh "$tag" -c '
+    while IFS= read -r path; do
+      test -e "/app/$path" || { echo "Missing /app/$path" >&2; exit 1; }
+    done
+  ' <<<"$tool_paths" || fail "the image is missing detection-tool artifacts"
+  # Presence alone cannot catch a release binary needing a newer glibc than the
+  # worker image supplies. Probe each native engine with a documented version CLI.
+  docker run --rm --entrypoint python "$tag" -c '
+import platform
+import subprocess
+from pathlib import Path
+from app.tools.catalog import TOOLS
+machine = {"arm64": "aarch64"}.get(platform.machine(), platform.machine())
+target = f"{machine}-{platform.system().lower()}"
+for spec in TOOLS.values():
+    for asset in spec.assets:
+        if asset.target == target and spec.version_args:
+            binary = Path("/app/tools") / spec.name / asset.installed
+            subprocess.run([str(binary), *spec.version_args], check=True, capture_output=True, timeout=30)
+  ' || fail "a detection-tool binary cannot run in the worker image"
   # Same recursive .git check as the archive, for the same 103 MB reason.
   if docker run --rm --entrypoint sh "$tag" -c "find /app -name .git -maxdepth 6 | grep -q ." 2>/dev/null; then
     fail "a .git directory is present in the image"

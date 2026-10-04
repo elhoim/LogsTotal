@@ -187,12 +187,27 @@ class TestShippedWorkflows:
                 assert lt in valid, f"{path.name}: unknown log_type {lt!r}"
 
     def test_all_tools_registered(self):
-        from app.tools.registry import _REGISTRY
+        from app.tools.catalog import TOOLS
+        from app.tools.registry import get_adapter_class
 
         _, shipped = self._shipped()
         for path, data in shipped:
             for task in data.get("tasks", []):
-                assert task["tool"] in _REGISTRY, f"{path.name}: unregistered tool {task['tool']!r}"
+                name = task["tool"]
+                assert name in TOOLS, f"{path.name}: unregistered tool {name!r}"
+                assert get_adapter_class(name).name == name
+
+    def test_rsigma_workflow_matches_declared_capabilities(self):
+        from app.tools.catalog import TOOLS
+
+        root, shipped = self._shipped()
+        windows = next(data for path, data in shipped if path.name == "windows_full.yml")
+        task = next(t for t in windows["tasks"] if t["tool"] == "rsigma")
+        spec = TOOLS["rsigma"]
+        assert spec.supported_types == set(windows["log_types"])
+        assert task.get("threads", 1) == 1
+        assert task["tool_path"] == {a.target: f"tools/rsigma/{a.installed}" for a in spec.assets}
+        assert all((root / p).is_file() for p in task["tool_path"].values())
 
     def test_rules_paths_exist(self):
         root, shipped = self._shipped()

@@ -220,7 +220,10 @@ def apply_to_env(rec: dict, assume_yes: bool) -> int:
     return 0
 
 
-_THREADS_TOOLS = {"hayabusa", "chainsaw"}
+# Pure catalog: importing this must work before application dependencies exist.
+from app.tools.catalog import TOOLS  # noqa: E402
+
+_THREADS_TOOLS = {name for name, spec in TOOLS.items() if spec.supports_threads}
 
 
 def _apply_threads_to_text(text: str, value: int) -> tuple[str, list[str]]:

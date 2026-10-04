@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from app.tools.base import NormalizedFinding, ToolAdapter
+from app.tools.catalog import TOOLS
+from app.tools.output import RawMatch, event_timestamp, json_records
 
 _log = logging.getLogger(__name__)
 
@@ -70,15 +72,20 @@ class ChainsawAdapter(ToolAdapter):
 
     name = "chainsaw"
 
-    SUPPORTED_TYPES = {"evtx"}
+    SUPPORTED_TYPES = TOOLS["chainsaw"].supported_types
 
     _DEFAULT_CHAINSAW_RULES = "tools/chainsaw/rules/"
     _DEFAULT_MAPPING = "tools/chainsaw/mappings/sigma-event-logs-all.yml"
 
+    @classmethod
+    def iter_raw_matches(cls, path: Path):
+        for event in json_records(path, jsonl=True):
+            yield RawMatch(event, event.get("name", event.get("group", "")), event.get("id", ""), event.get("level"), timestamp=event_timestamp(event))
+
     # ── subclass hooks ───────────────────────────────────────────────────
 
     def _output_filename(self, file_path: Path) -> str:
-        return f"{file_path.stem}_chainsaw.json"
+        return file_path.stem + TOOLS["chainsaw"].output_suffix
 
     def _build_local_cmd(
         self,

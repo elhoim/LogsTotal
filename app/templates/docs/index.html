@@ -124,7 +124,7 @@
     <!-- ── What is LogsTotal? ───────────────────────── -->
     <section id="what-is">
       <h2>What is LogsTotal?</h2>
-      <p>LogsTotal runs your log files through a panel of detection tools — Zircolite, Chainsaw, Hayabusa, ChopChopGo, and any others the operator has installed — and shows you what each one found. Read the <strong>detection score</strong> the way you&rsquo;d read a VirusTotal ratio: it tells you how many tools flagged the file, so you can judge a signal by how many independent detectors agreed.</p>
+      <p>LogsTotal runs your log files through a panel of detection tools — Zircolite, Chainsaw, Hayabusa, ChopChopGo, RSigma, and any others the operator has installed — and shows you what each one found. Read the <strong>detection score</strong> the way you&rsquo;d read a VirusTotal ratio: it tells you how many tools flagged the file, so you can judge a signal by how many independent detectors agreed.</p>
       <p>You don&rsquo;t need an account to submit a log or read a public report. Logged-in users get private submissions and, at higher tiers, cross-job intelligence views.</p>
 
       <h3>Your first analysis in three steps</h3>
@@ -677,6 +677,11 @@
             <td><a href="https://github.com/M00NLIG7/ChopChopGo" target="_blank" rel="noopener">ChopChopGo</a></td>
             <td>Syslog, Auditd</td>
             <td>Fast Go binary; primary engine for syslog</td>
+          </tr>
+          <tr>
+            <td><a href="https://github.com/timescale/rsigma" target="_blank" rel="noopener">RSigma</a></td>
+            <td>EVTX, JSON EVTX, Winlogbeat</td>
+            <td>Native Sigma evaluation with Windows logsource mappings</td>
           </tr>
         </tbody>
       </table>

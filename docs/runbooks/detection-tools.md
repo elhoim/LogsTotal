@@ -9,9 +9,10 @@ Which detection engines LogsTotal runs, how to keep them and their rules current
 | [Zircolite](https://github.com/wagga40/Zircolite) | **Docker image**, pinned by digest in `workflows/*.yml` | EVTX, JSON EVTX, Winlogbeat, Windows Event XML, Auditd, Sysmon for Linux, Journald | JSON array |
 | [Chainsaw](https://github.com/WithSecureOpenSource/chainsaw) | Binary | EVTX | JSONL |
 | [Hayabusa](https://github.com/Yamato-Security/hayabusa) | Binary | EVTX | JSONL |
+| [RSigma](https://github.com/timescale/rsigma) | Binary | EVTX, JSON EVTX, Winlogbeat | JSONL with full events |
 | [ChopChopGo](https://github.com/M00NLIG7/ChopChopGo) | Binary | Auditd, Syslog | JSON (stdout) |
 
-Chainsaw, Hayabusa and ChopChopGo ship as binaries under `tools/`, with their rule sets, so an installation can analyse Windows and Linux logs without downloading anything. There is no macOS build of ChopChopGo.
+Chainsaw, Hayabusa, ChopChopGo and RSigma ship as binaries under `tools/`, with their rule sets, so an installation can analyse Windows and Linux logs without downloading anything. There is no macOS build of ChopChopGo.
 
 Zircolite is the only tool that runs as a container. The worker needs a reachable Docker daemon, and pulls the image (about 500 MB) the first time a job needs it, inside that job; pre-pull it on a slow or metered link. The image is pinned by digest, so an upstream rebuild cannot change what runs on a worker that has access to the Docker socket — see [Moving the Zircolite image pin](#moving-the-zircolite-image-pin).
 
@@ -34,6 +35,36 @@ Zircolite tags events that carry no host name with `host: "offline"`. LogsTotal 
 
 Exports come in two layouts: a bare sequence of `<Event>` elements (`wevtutil qe /f:xml`) and a document with an `<Events>` root. Zircolite needs a different option for each, so LogsTotal inspects each file and picks the right one. Do not put `-x` or `--evtxtract-input` in a task's `extra_args`: an explicit input option overrides that choice, and the wrong one parses a fraction of the file while still reporting success.
 
+### RSigma on Windows logs
+
+Windows Full Analysis includes RSigma **0.23.0**, running locally on Linux x86-64,
+Linux ARM64 or macOS Apple Silicon. Its Linux x86-64 binary requires **glibc 2.39 or
+newer**; the ARM64 binary requires **glibc 2.34 or newer**. Use the LogsTotal worker image
+on older hosts. RSigma batch evaluation is single-threaded: omit `threads` or set it to `1`.
+
+The adapter accepts binary EVTX and JSON exports with **one event object per line**.
+Native `Event.System` / `Event.EventData`, flattened native fields, and Winlogbeat/ECS
+fields are mapped to Sigma names while retaining the original event. Category rules are
+restricted by provider, channel and event ID; service rules are restricted by channel.
+For exports without a provider, the mapping uses the provider associated with the exact
+known channel. JSON arrays and malformed lines fail the scan. Windows XML, Linux logs,
+correlation rules and RSigma container execution are outside this integration.
+
+`tools/rsigma/rules/` is an independent SigmaHQ Windows snapshot from `rules`,
+`rules-emerging-threats` and `rules-threat-hunting`; it does not read Chainsaw's files.
+Categories requiring unavailable Windows Event Log telemetry (`file_access`, `file_rename`)
+are excluded. Custom rules must declare `product: windows`; any category or service must
+be supported by `app/tools/rsigma_windows.py`. Product-only rules can inspect every Windows
+event. Unknown sources fail before evaluation. Service channels follow the
+[SigmaHQ Windows mappings](https://github.com/SigmaHQ/pySigma/blob/main/sigma/pipelines/common.py).
+
+Use one `rules_path`. The adapter loads its bundled configuration and
+`tools/rsigma/mappings/windows.yml`; `mapping_path` may point to an operator-maintained
+pipeline using the same event aliases. Reserve input, output and completion options for
+the adapter: it rejects `extra_args` that override those flags. Missing completion
+statistics, malformed detections or reported parser errors fail the task, preserving a
+`.partial` file for diagnosis instead of publishing incomplete raw evidence to analytics.
+
 ## Checking for updates
 
 A stale rule set does not announce itself: it reports a clean job. Check how current the tools and rules are with:
@@ -45,7 +76,9 @@ A stale rule set does not announce itself: it reports a clean job. Check how cur
 It compares each engine's version and each rule snapshot's commit with upstream, verifies the installed binary and rule checksums, and reports the upstream date of each snapshot. It changes nothing, so it is safe on a production host; it needs internet access.
 
 - **A new major version is reported as BREAKING, not as an update.** These tools rename commands and options between major versions, and LogsTotal builds their command lines, so a major version needs testing before use. `./logstotal tools:update` refuses one unless you add `--allow-major` after the tool name (`./logstotal tools:update -- hayabusa --allow-major`); it also requires that option when the installed version cannot be read.
-- **Rule sets matter more than binaries.** A binary one minor version behind detects the same things; a rule set six months behind does not.
+- For **RSigma before 1.0**, a new minor version also reports BREAKING and requires
+  `--allow-major` after validating the adapter against the new CLI and output format.
+- **Rule sets matter as well as binaries.** A stale rule set can miss newer techniques.
 - `./logstotal tools:check -- --strict` exits non-zero when an update is pending, a version is unknown, a file has changed or upstream is unreachable — useful in a scheduled check.
 
 ## Updating rule sets
@@ -58,6 +91,7 @@ Rule sets are snapshots shipped with each release, not live mirrors: nothing fet
 | Chainsaw | `tools/chainsaw/sigma/`, `tools/chainsaw/rules/`, `tools/chainsaw/mappings/` | [SigmaHQ](https://github.com/SigmaHQ/sigma), [Chainsaw](https://github.com/WithSecureOpenSource/chainsaw) | `./logstotal tools:update -- chainsaw` |
 | Hayabusa | `tools/hayabusa/rules/`, `tools/hayabusa/config/` | [hayabusa-rules](https://github.com/Yamato-Security/hayabusa-rules) | `./logstotal tools:update -- hayabusa` |
 | ChopChopGo | `tools/chopchopgo/rules/`, `tools/chopchopgo/mappings/` | [SigmaHQ](https://github.com/SigmaHQ/sigma) Linux rules | `./logstotal tools:update -- chopchopgo` |
+| RSigma | `tools/rsigma/rules/`, `tools/rsigma/mappings/`, `tools/rsigma/config/` | [SigmaHQ](https://github.com/SigmaHQ/sigma) Windows rules; LogsTotal Windows mapping | `./logstotal tools:update -- rsigma` |
 
 `./logstotal tools:update -- <tool>` (one or more tool names) downloads the latest release binaries, rules and matching mappings or configuration. Each download must match the SHA-256 digest GitHub publishes for it, the expected executable name and the right architecture; if anything fails, the command exits non-zero before replacing any of that tool's files. The previous files are kept under `backups/tools-<tool>-*/`, and the installed versions are recorded in `tools/<tool>/upstream.json`. For Zircolite it refreshes the compiled rules only (keeping `zircolite_journald.yaml`); the container image is moved separately.
 
@@ -130,7 +164,7 @@ tasks:
 
 | Key | Meaning |
 |-----|---------|
-| `tool` | `zircolite`, `chainsaw`, `hayabusa` or `chopchopgo` |
+| `tool` | `zircolite`, `chainsaw`, `hayabusa`, `chopchopgo` or `rsigma` |
 | `tool_path` | Path to the binary: a string, or a map keyed by `{arch}-{os}` (`x86_64-linux`, `aarch64-linux`, `aarch64-darwin`). A task with no entry for the host's architecture is skipped with a message instead of failing the job |
 | `docker_image` | Run the tool from this container image instead of a binary. The shipped Zircolite tasks use it. Takes precedence over `tool_path` if both are set |
 | `dockerfile` | Build the image from a Dockerfile instead of pulling it |

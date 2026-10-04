@@ -1,0 +1,19 @@
+{
+  "repo": "timescale/rsigma",
+  "version": "v0.23.0",
+  "binaries": {
+    "rsigma-intel-lin": "c11692e3bfa47edd430deaddda691205e51eb8e3dc7f0c05adb9dfc9d649e7b4",
+    "rsigma-arm-lin": "ad223174fed8f3bde3c0ab127101a9ae9f267b2091a2cf9bbf6d9dd553054974",
+    "rsigma-mac": "e8f0d0fd8947ecefa0a538633aac87e04d62271637b925dacff6249adc8c5685"
+  },
+  "rules": {
+    "repo": "SigmaHQ/sigma",
+    "commit": "2e8fd89f82d9104c1b30321a307254ddeea17de2",
+    "committed_at": "2026-09-15T11:45:27Z",
+    "trees": {
+      "rules": "9b914b3daceab8d23ecc32dfece86a02123dab47402c8a83984e628a7e48308a",
+      "mappings": "0fd3c8a22d52629560f53c4e950a8c2e57f4e15ce3180a6983b632ac939fe3f4",
+      "config": "b75b9cee72d802fa67e42ec5bcd5273357a5e61de5affde519ddd093e30f4057"
+    }
+  }
+}

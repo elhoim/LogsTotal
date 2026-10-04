@@ -11,8 +11,9 @@ No account is needed to submit a file or read public results.
 
 **Detection engines:** [Zircolite](https://github.com/wagga40/Zircolite),
 [Chainsaw](https://github.com/WithSecureOpenSource/chainsaw),
-[Hayabusa](https://github.com/Yamato-Security/hayabusa) and
-[ChopChopGo](https://github.com/M00NLIG7/ChopChopGo). Adding another takes a small adapter,
+[Hayabusa](https://github.com/Yamato-Security/hayabusa),
+[ChopChopGo](https://github.com/M00NLIG7/ChopChopGo) and
+[RSigma](https://github.com/timescale/rsigma). Adding another takes a catalog entry and an adapter,
 for a binary or a Docker image — see
 [Adding a tool adapter](docs/contribute/development.md#adding-a-tool-adapter).
 
@@ -26,8 +27,8 @@ for a binary or a Docker image — see
 
 ## What you get
 
-- **Drop a log, get a detection report.** Sigma rules run through four engines, and the log
-  type is detected on drop.
+- **Drop a log, get a detection report.** Five engines are available; the workflow and log
+  type determine which engines run. The log type is detected on drop.
 - **MITRE ATT&CK context** — a tactic heat-map per job.
 - **Two timelines** — an hourly activity histogram by tactic, and a zoomable per-alert timeline.
 - **Process trees** rebuilt from rule-matched process-creation events.

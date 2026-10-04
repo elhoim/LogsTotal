@@ -9,6 +9,10 @@ What a machine needs before LogsTotal is installed on it, and how to get a relea
   host's OS and warns, without stopping, when it is outside that set.
 - **macOS** is supported for local development only.
 
+For native workers outside the Docker image, RSigma requires glibc 2.39+ on Linux
+x86-64 or glibc 2.34+ on Linux ARM64. See
+[RSigma on Windows logs](../runbooks/detection-tools.md#rsigma-on-windows-logs).
+
 Analysts need a desktop browser, 1024px or wider, with JavaScript enabled. The UI is
 fixed-width and file submission is script-driven — see
 [Known limitations](../limitations.md#platform-support).
@@ -58,7 +62,7 @@ nothing installed:
 
 ## Resources
 
-- **Release archive** — about 60 MB to download and about 160 MB unpacked, most of it the
+- **Release archive** — about 90 MB to download and about 280 MB unpacked, most of it the
   detection tools and their rule sets.
 - **Zircolite image** — about 530 MB, pulled once, by the first job that runs Zircolite
   (five of the six shipped workflows do). On a slow or metered link, pull the image named

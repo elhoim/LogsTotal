@@ -19,7 +19,8 @@ LogsTotal has three nested layers of concurrency, and they multiply:
    (`/admin/settings`), up to `TOOL_MAX_WORKERS` tools in that job run at once — never more
    than the workflow has. This is a per-job *latency* setting, not a throughput one.
 3. **Threads per tool — `threads` (workflow YAML).** Hayabusa (`--threads`) and Chainsaw
-   (`--num-threads`) can use several threads each; Zircolite ignores the setting. LogsTotal
+   (`--num-threads`) can use several threads each; Zircolite ignores the setting. RSigma
+   batch evaluation uses one thread and rejects `threads` values above 1. LogsTotal
    always passes an explicit value, so **omitting `threads` means 1** (never all cores).
    **The shipped workflows set `threads: 2`** for Hayabusa and Chainsaw. Workflows are
    stored in the database and shared by every worker, so size `threads` for your smallest
@@ -38,16 +39,16 @@ just `HUEY_WORKERS × threads`.
 ## Recommended defaults by host size
 
 What `./logstotal recommend-scaling` prints for a **dedicated worker host** running the
-shipped workflows (the largest runs three tools), with `parallel_execution` off — the
+shipped workflows (the largest runs four tools), with `parallel_execution` off — the
 throughput-optimal default:
 
 | Cores | RAM | `HUEY_WORKERS` | per-tool `threads` | `TOOL_MAX_WORKERS`² | `DB_POOL_SIZE`¹ | peak CPU |
 |------:|----:|---------------:|-------------------:|--------------------:|----------------:|---------:|
 | 2     | 2 GB  | 1 | 1 | 2 | 5 | 1 |
 | 4     | 8 GB  | 2 | 2 | 2 | 5 | 4 |
-| 8     | 16 GB | 4 | 2 | 3 | 5 | 8 |
-| 16    | 32 GB | 8 | 2 | 3 | 8 | 16 |
-| 32    | 64 GB | 16| 2 | 3 | 16| 32 |
+| 8     | 16 GB | 4 | 2 | 4 | 5 | 8 |
+| 16    | 32 GB | 8 | 2 | 4 | 8 | 16 |
+| 32    | 64 GB | 16| 2 | 4 | 16| 32 |
 
 ¹ `DB_POOL_SIZE` applies to **PostgreSQL only** (SQLite ignores it). Size it at least
 `HUEY_WORKERS` so each worker thread can hold a connection; the pool is per process (web

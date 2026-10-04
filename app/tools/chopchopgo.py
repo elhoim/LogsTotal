@@ -10,6 +10,8 @@ import yaml
 from app.json_utils import dumps as json_dumps
 from app.json_utils import loads as json_loads
 from app.tools.base import NormalizedFinding, ToolAdapter, ToolOutput
+from app.tools.catalog import TOOLS
+from app.tools.output import RawMatch, event_timestamp, json_records
 from app.yaml_utils import safe_load as yaml_safe_load
 
 _log = logging.getLogger(__name__)
@@ -35,7 +37,7 @@ class ChopChopGoAdapter(ToolAdapter):
     # journald is NOT supported: ChopChopGo's journald target reads the live systemd
     # journal via the sd-journal API and rejects -file, so it cannot analyze an
     # uploaded journal export. Journald uploads are routed to Zircolite (-j) instead.
-    SUPPORTED_TYPES = {"auditd", "syslog"}
+    SUPPORTED_TYPES = TOOLS["chopchopgo"].supported_types
 
     def _target(self) -> str:
         """ChopChopGo -target value: explicit config wins, else the log type."""
@@ -46,10 +48,15 @@ class ChopChopGoAdapter(ToolAdapter):
             return str(self._log_type)
         return "syslog"
 
+    @classmethod
+    def iter_raw_matches(cls, path: Path):
+        for event in json_records(path, jsonl=False):
+            yield RawMatch(event, event.get("Title", ""), event.get("ID", ""), None, timestamp=event_timestamp(event))
+
     # ── subclass hooks ───────────────────────────────────────────────────
 
     def _output_filename(self, file_path: Path) -> str:
-        return f"{file_path.stem}_chopchopgo.json"
+        return file_path.stem + TOOLS["chopchopgo"].output_suffix
 
     def _build_local_cmd(
         self,

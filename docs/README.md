@@ -1,7 +1,7 @@
 # LogsTotal documentation
 
 LogsTotal is a self-hosted log analysis platform: upload a log file and several detection
-engines (Zircolite, Chainsaw, Hayabusa, ChopChopGo) report what each of them found, grouped
+engines (Zircolite, Chainsaw, Hayabusa, ChopChopGo, RSigma) report what each of them found, grouped
 by severity, with MITRE ATT&CK context and the entities they involve.
 
 These pages are for the people who **install and run** an instance, and for contributors.

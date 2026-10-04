@@ -259,3 +259,59 @@ def test_manifest_cannot_hide_a_modified_binary(tmp_path):
     binary.write_bytes(b"replacement")
     with pytest.raises(ValueError, match="binaries differ"):
         updater.local_version(tmp_path, "chopchopgo")
+
+
+def test_rsigma_release_assets_cover_shipped_platforms():
+    assets = updater.asset_map("rsigma", "v0.23.0")
+    assert ("rsigma-x86_64-unknown-linux-gnu.tar.gz", "rsigma-intel-lin", "rsigma") in assets
+    assert ("rsigma-aarch64-unknown-linux-gnu.tar.gz", "rsigma-arm-lin", "rsigma") in assets
+    assert ("rsigma-aarch64-apple-darwin.tar.gz", "rsigma-mac", "rsigma") in assets
+
+
+def test_rsigma_minor_update_requires_contract_review(installed, monkeypatch):
+    monkeypatch.setattr(updater, "local_version", lambda *_: "0.23.0")
+    monkeypatch.setattr(updater, "api", lambda *_: {"tag_name": "v0.24.0"})
+    with pytest.raises(ValueError, match="--allow-major"):
+        updater.update(installed, "rsigma", False)
+
+
+def test_rsigma_rules_are_independent_curated_windows_snapshots(tmp_path):
+    source = tmp_path / "source"
+    for rel in [
+        "rules/windows/process_creation/a.yml",
+        "rules/linux/b.yml",
+        "rules/windows/file/file_access/c.yml",
+        "rules-deprecated/windows/d.yml",
+        "rules-emerging-threats/windows/e.yml",
+    ]:
+        p = source / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("title: Rule\nid: r1\n")
+    (source / "LICENSE").write_text("Detection Rule License")
+    stage = tmp_path / "staged"
+    stage.mkdir()
+    updater.rsigma_rules(source, stage)
+    files = contents(stage)
+    assert "rules/rules/windows/process_creation/a.yml" in files
+    assert "rules/rules-emerging-threats/windows/e.yml" in files
+    assert not any(x.endswith(("/b.yml", "/c.yml", "/d.yml")) for x in files)
+    assert (stage / "mappings/windows.yml").is_file()
+    assert (stage / "LICENSE-SigmaHQ").read_text() == "Detection Rule License"
+
+
+def test_artifact_inventory_includes_every_engine_without_network(monkeypatch, capsys):
+    def no_network(*_):
+        raise AssertionError("artifact inventory must be offline")
+
+    monkeypatch.setattr(updater, "api", no_network)
+    assert updater.main(["artifacts"]) == 0
+    paths = set(capsys.readouterr().out.splitlines())
+    assert {
+        "tools/rsigma/rsigma-intel-lin",
+        "tools/rsigma/rsigma-arm-lin",
+        "tools/rsigma/rsigma-mac",
+        "tools/rsigma/mappings/windows.yml",
+        "tools/rsigma/LICENSE-SigmaHQ",
+        "tools/rsigma/upstream.json",
+        "tools/hayabusa/hayabusa-mac",
+    } <= paths
