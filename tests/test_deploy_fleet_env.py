@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import stat
 import sys
 from pathlib import Path
 
@@ -96,6 +98,21 @@ def test_generated_files_are_not_world_readable(tmp_path: Path):
     _run(tmp_path)
     for path in (tmp_path / "deploy-envs").glob("*"):
         assert path.stat().st_mode & 0o077 == 0, f"{path.name} is readable by others"
+
+
+def test_secret_files_are_created_owner_only_not_chmodded_after(tmp_path: Path, monkeypatch):
+    """A chmod after the write leaves a window in which another local user can open the
+    file at the umask mode and keep reading it. Disabling the after-the-fact chmod shows
+    the mode each file was created with."""
+    monkeypatch.setattr(Path, "chmod", lambda self, mode, **kw: None)
+    old = os.umask(0o022)
+    try:
+        assert _run(tmp_path) == 0
+    finally:
+        os.umask(old)
+    out = tmp_path / "deploy-envs"
+    for name in ("secrets.json", "cp.example.com.env", "w1.example.com.env"):
+        assert stat.S_IMODE((out / name).stat().st_mode) == 0o600, name
 
 
 # ── Cross-host values ────────────────────────────────────────────────────────

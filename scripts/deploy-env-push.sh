@@ -5,7 +5,7 @@
 # ${DEPLOY_REMOTE_DIR}/.env on the matching host. Skipping it on even one host makes
 # preflight WARN and the deploy then fail on `env_file: .env`.
 #
-# The copy lands in /tmp first and is moved into place with `install -m 600`. A direct
+# The copy lands in a private mktemp directory first and is moved into place with `install -m 600`. A direct
 # scp to .env would leave a world-readable file holding SECRET_KEY, the database
 # password and the S3 keys for as long as the transfer takes.
 #
@@ -60,7 +60,7 @@ REFUSED=""
 PUSHED=0
 
 push_host() {
-  local host=$1 idx=$2 role src remote_keys local_keys extra tmp
+  local host=$1 idx=$2 role src remote_keys local_keys extra
   role="worker"
   [ "$idx" -eq 0 ] && role="control-plane"
   src="${DEPLOY_ENV_DIR}/$(slug_for "$host").env"
@@ -103,22 +103,14 @@ push_host() {
     fi
   fi
 
-  tmp="/tmp/logstotal-env.$$"
-  host_copy_to "$src" "$host" "$tmp"
-  # Unprivileged first, elevating only if that fails. The target is often already owned
-  # by the deploying user — `task deploy:bootstrap` chowns it — and reaching for sudo
-  # unconditionally turns a working setup into a password prompt the deploy cannot answer.
-  # The trailing `rm` must not become the command's exit status: ending `...; rm -f ${tmp}`
-  # would let a failed install — `sudo: a password is required` is the one that happens —
-  # return 0 and be announced as installed, leaving the host with a stale .env, or none.
-  if ! host_exec "$host" "mkdir -p ${DEPLOY_REMOTE_DIR} 2>/dev/null && install -m 600 ${tmp} ${DEPLOY_REMOTE_DIR}/.env 2>/dev/null || { sudo -n mkdir -p ${DEPLOY_REMOTE_DIR} && sudo -n install -m 600 ${tmp} ${DEPLOY_REMOTE_DIR}/.env; }; rc=\$?; rm -f ${tmp}; exit \$rc"; then
+  if ! host_install_env "$src" "$host" "$DEPLOY_REMOTE_DIR"; then
     die "Could not write ${DEPLOY_REMOTE_DIR}/.env on ${host}. Nothing further was deployed.
 The host has no configuration, or an old one, so continuing would deploy it against the wrong secrets.
 Usually this is write permission: deploy as root@${host#*@}, or give the SSH user passwordless sudo."
   fi
   local fingerprint
   fingerprint=$(file_sha256 "$src")
-  if ! host_exec "$host" "(umask 077; printf '%s\n' '$fingerprint' > ${DEPLOY_REMOTE_DIR}/.env.deploy.sha256) 2>/dev/null || printf '%s\n' '$fingerprint' | sudo -n tee ${DEPLOY_REMOTE_DIR}/.env.deploy.sha256 >/dev/null"; then
+  if ! host_exec "$host" "(umask 077; printf '%s\n' '$fingerprint' > $(shquote "${DEPLOY_REMOTE_DIR}/.env.deploy.sha256")) 2>/dev/null || printf '%s\n' '$fingerprint' | sudo -n tee $(shquote "${DEPLOY_REMOTE_DIR}/.env.deploy.sha256") >/dev/null"; then
     die "Could not record the .env fingerprint on ${host}; the next changed push will require DEPLOY_ENV_PUSH_FORCE=yes."
   fi
   info "${host}: installed ${DEPLOY_REMOTE_DIR}/.env (mode 600)"

@@ -395,14 +395,17 @@ tasks:
         # `trap`, not a trailing `docker rm`: a failing test must still tear the container
         # down, or the next run collides on the port and reports a connection error instead.
         trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
-        docker run -d --rm --name "$NAME" -e POSTGRES_PASSWORD=pgtest -e POSTGRES_USER=pgtest -e POSTGRES_DB=pgtest -p "${PORT}:5432" postgres:16-alpine >/dev/null
+        # pgtest is the container's superuser: a fresh password each run, and loopback only —
+        # a bare -p publishes on every interface, past ufw.
+        PGPW="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+        POSTGRES_PASSWORD="$PGPW" docker run -d --rm --name "$NAME" -e POSTGRES_PASSWORD -e POSTGRES_USER=pgtest -e POSTGRES_DB=pgtest -p "127.0.0.1:${PORT}:5432" postgres:16-alpine >/dev/null
         echo -n "Waiting for PostgreSQL on :${PORT}"
         for _ in $(seq 1 40); do
-          if docker exec "$NAME" pg_isready -U pgtest -q 2>/dev/null; then echo " ready"; break; fi
+          if docker exec "$NAME" pg_isready -h 127.0.0.1 -U pgtest -q 2>/dev/null; then echo " ready"; break; fi
           sleep 0.5; echo -n "."
         done
-        docker exec "$NAME" pg_isready -U pgtest -q || { echo " timeout"; exit 1; }
-        LOGSTOTAL_TEST_DOCKER=1 POSTGRES_TEST_URL="postgresql+psycopg2://pgtest:pgtest@127.0.0.1:${PORT}/pgtest" pdm run -- pytest tests/test_postgres_sql_compat.py tests/test_postgres_backup_restore.py -v
+        docker exec "$NAME" pg_isready -h 127.0.0.1 -U pgtest -q || { echo " timeout"; exit 1; }
+        LOGSTOTAL_TEST_DOCKER=1 POSTGRES_TEST_URL="postgresql+psycopg2://pgtest:${PGPW}@127.0.0.1:${PORT}/pgtest" pdm run -- pytest tests/test_postgres_sql_compat.py tests/test_postgres_backup_restore.py -v
 
   docs:build:
     desc: Build the documentation website into site/ — warnings (a broken link or anchor) are errors
@@ -617,17 +620,20 @@ tasks:
 
       Stop the app first: it is a copy of a moving target otherwise.
 
-        ./logstotal db:to-postgres -- \
-          --sqlite-url sqlite:///logstotal.db \
-          --postgres-url postgresql+psycopg2://logstotal:PASS@localhost:5432/logstotal
+        read -rs POSTGRES_TARGET_URL && export POSTGRES_TARGET_URL
+        ./logstotal db:to-postgres -- --sqlite-url sqlite:///logstotal.db
+
+      The target URL (postgresql+psycopg2://user:password@host:5432/logstotal) is read
+      from POSTGRES_TARGET_URL, not the command line, where any local user could read the
+      password from the process list. --postgres-url overrides it, for a URL with no password.
 
       A `sqlite3 .dump | psql` recipe does NOT work here — GUID columns and booleans
       change representation with the dialect. See docs/runbooks/sqlite-to-postgres.md
       for the full procedure, including the .env changes after.
     preconditions:
       - *needs-pdm
-      - sh: 'test -n "{{.CLI_ARGS}}"'
-        msg: "Usage: ./logstotal db:to-postgres -- --postgres-url postgresql+psycopg2://user:PASS@host:5432/logstotal"
+      - sh: 'test -n "${POSTGRES_TARGET_URL:-}{{.CLI_ARGS}}"'
+        msg: "Usage: POSTGRES_TARGET_URL=postgresql+psycopg2://user:password@host:5432/logstotal in the environment (read -rs POSTGRES_TARGET_URL && export POSTGRES_TARGET_URL), then ./logstotal db:to-postgres [-- --sqlite-url ...]"
     cmds:
       - pdm run -- python3 scripts/sqlite_to_postgres.py {{.CLI_ARGS}}
 

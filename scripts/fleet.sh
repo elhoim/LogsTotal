@@ -66,6 +66,7 @@ case "$ACTION" in
        (or set DEPLOY_HOSTS, whose first entry is the control plane)."
     fi
 
+    HOST=$(hosts_from_args "$HOST") || exit 1
     # Refuse to overwrite: a deploy.env may hold settings this record knows nothing about
     # — the same rule deploy-fleet.sh's init follows, for the same reason.
     if [ -f "$DEPLOY_ENV_FILE" ] && [ "${FORCE:-}" != "yes" ]; then
@@ -86,7 +87,16 @@ case "$ACTION" in
        A control plane writes one on every deploy — has this fleet been deployed yet?
        Check with: ./logstotal deploy:status"
 
-    run_py "$SCRIPT_DIR/fleet_manifest.py" --file "${work}/manifest.json" deploy-env > "$DEPLOY_ENV_FILE"
+    # Use the fetched host as the portable fallback. A remote record may never select
+    # this workstation through a stored local sentinel.
+    run_py "$SCRIPT_DIR/fleet_manifest.py" --file "${work}/manifest.json" portable --fallback "$HOST" >/dev/null
+    imported_hosts=$(run_py "$SCRIPT_DIR/fleet_manifest.py" --file "${work}/manifest.json" hosts)
+    if hosts_have_local "$imported_hosts" && ! is_local_host "$HOST"; then
+      die "the fetched fleet record names local; refusing to target this machine."
+    fi
+    # Rendered beside the record first: a refused record must not leave an empty deploy.env.
+    run_py "$SCRIPT_DIR/fleet_manifest.py" --file "${work}/manifest.json" deploy-env > "${work}/deploy.env"
+    mv -f "${work}/deploy.env" "$DEPLOY_ENV_FILE"
     info "Wrote ${DEPLOY_ENV_FILE} from ${HOST}'s fleet record:"
     run_py "$SCRIPT_DIR/fleet_manifest.py" --file "${work}/manifest.json" show | sed 's/^/  /'
     echo ""

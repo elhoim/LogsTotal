@@ -205,6 +205,11 @@ remote()    { host_exec "$@"; }
 scp_to()    { host_copy_to "$@"; }
 scp_from()  { host_copy_from "$@"; }
 
+# remote_mktemp HOST — a fresh private (0700) directory on HOST for staging uploads.
+remote_mktemp() {
+  host_private_dir "$1" deploy
+}
+
 # ── Parse hosts ──────────────────────────────────────────────────────────────
 
 HOSTS=()
@@ -457,8 +462,10 @@ export LOGSTOTAL_IMAGE_TAG="${LOGSTOTAL_IMAGE_TAG:-latest}"
 if [ -f "${DEPLOY_REMOTE_DIR}/data/.bundle-images" ]; then
   if [ "\$LOGSTOTAL_NO_BUILD" != "true" ]; then
     export LOGSTOTAL_NO_BUILD=true
-    . "${DEPLOY_REMOTE_DIR}/data/.bundle-images"
-    [ -n "\${tag:-}" ] && export LOGSTOTAL_IMAGE_TAG="\$tag"
+    # Parsed, never sourced: data/ is bind-mounted read-write into the web container, and
+    # this shell is root on the host. Only a well-formed image tag is taken from it.
+    tag=\$(sed -n '/^tag=[A-Za-z0-9_][A-Za-z0-9_.-]\{0,127\}\$/{s/^tag=//p;q;}' "${DEPLOY_REMOTE_DIR}/data/.bundle-images")
+    [ -n "\$tag" ] && export LOGSTOTAL_IMAGE_TAG="\$tag"
   fi
   # The worker CONTAINER is the thing that needs this — the tool adapter runs inside it and
   # env_file is the only way it is told anything. Written here because every other place is
@@ -1139,10 +1146,17 @@ do_deploy() {
       fi
     fi
 
-    local remote_pkg
-    remote_pkg="/tmp/logstotal-deploy-$(basename "$pkg")"
+    # Into a private mktemp directory on the host, never a fixed name in /tmp: the package
+    # name is the public release version, so a local user there could create that file
+    # first and rewrite it before it is extracted and installed.
+    local remote_tmp remote_pkg
+    remote_tmp=$(remote_mktemp "$h")
+    remote_pkg="${remote_tmp}/package.7z"
     step "upload package to ${h}"
-    scp_to "$pkg" "$h" "$remote_pkg"
+    if ! scp_to "$pkg" "$h" "$remote_pkg"; then
+      remote "$h" "rm -rf -- $(shquote "$remote_tmp")" >/dev/null || true
+      die "Could not stage the release on $h"
+    fi
 
     # Stage beside the install, then rsync across — never extract over the live tree.
     #
@@ -1167,8 +1181,8 @@ command -v rsync >/dev/null 2>&1 || { echo "ERROR: rsync not installed on this s
 mkdir -p "${DEPLOY_REMOTE_DIR}"
 rm -rf "${stage}"
 mkdir -p "${stage}"
-7z x -y "${remote_pkg}" -o"${stage}" >/dev/null
-rm -f "${remote_pkg}"
+trap $(shquote "rm -rf -- $(shquote "$remote_tmp")") EXIT
+7z x -y $(shquote "$remote_pkg") -o"${stage}" >/dev/null
 [ -f "${stage}/VERSION" ] || { echo "ERROR: the staged archive has no VERSION at its root — is it a LogsTotal release?"; rm -rf "${stage}"; exit 1; }
 rsync -a --delete ${OVERLAY_EXCLUDES} "${stage}/" "${DEPLOY_REMOTE_DIR}/"
 rm -rf "${stage}"
@@ -1181,12 +1195,16 @@ EOS
     # that does not, and it happens per host because each has its own Docker daemon.
     if [[ -n "${BUNDLE:-}" && -d .bundle/images ]]; then
       step "${h}: load images from the bundle"
-      local img
+      local img img_tmp
+      img_tmp=$(remote_mktemp "$h")
       for img in .bundle/images/*.tar; do
         [[ -f "$img" ]] || continue
-        scp_to "$img" "$h" "/tmp/$(basename "$img")"
-        remote "$h" "docker load -i /tmp/$(basename "$img") && rm -f /tmp/$(basename "$img")" >/dev/null
+        if ! scp_to "$img" "$h" "${img_tmp}/image.tar" || ! remote "$h" "docker load -i $(shquote "$img_tmp/image.tar")" >/dev/null; then
+          remote "$h" "rm -rf -- $(shquote "$img_tmp")" >/dev/null || true
+          die "Could not load bundled images on $h"
+        fi
       done
+      remote "$h" "rm -rf -- $(shquote "$img_tmp")" >/dev/null || true
       export LOGSTOTAL_NO_BUILD=true
       # And SAY which tag was loaded. The bundle tags its images with the release —
       # `logstotal:1.0.0` — so that a host can hold two and a rollback has something to go
@@ -1220,7 +1238,7 @@ EOS
 
     if truthy "$DEPLOY_KEEPENV" && [[ -f "$env_backup" ]]; then
       step "restore .env to ${h}"
-      scp_to "$env_backup" "$h" "${DEPLOY_REMOTE_DIR}/.env"
+      host_install_env "$env_backup" "$h" "$DEPLOY_REMOTE_DIR"
     fi
     if [[ -z "${BUNDLE:-}" ]]; then
       remote "$h" "if [ -f '${DEPLOY_REMOTE_DIR}/data/.bundle-images' ]; then

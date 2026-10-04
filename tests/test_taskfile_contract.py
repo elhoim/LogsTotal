@@ -458,3 +458,64 @@ def test_no_include_is_optional():
     root = yaml.safe_load(ROOT_TASKFILE.read_text(encoding="utf-8"))
     for name, spec in (root.get("includes") or {}).items():
         assert not (isinstance(spec, dict) and spec.get("optional")), f"include {name} is optional: a missing file would hide its tasks without a word"
+
+
+# ── PostgreSQL credentials in the dev tasks ─────────────────────────────────
+
+
+def _run_test_pg(tmp_path: Path) -> tuple[list[str], str]:
+    """Run test:pg's real script with docker and pdm stubbed; return docker's argv lines and
+    the POSTGRES_TEST_URL pytest would have been given."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir(parents=True)
+    log = tmp_path / "docker.log"
+    (bindir / "docker").write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\nexit 0\n')
+    (bindir / "pdm").write_text(f'#!/bin/sh\nprintf "%s" "$POSTGRES_TEST_URL" > "{tmp_path}/url"\nexit 0\n')
+    for stub in bindir.iterdir():
+        stub.chmod(0o755)
+    script = _tasks()["test:pg"]["cmds"][0]
+    env = {k: v for k, v in os.environ.items() if k != "POSTGRES_TEST_URL"}
+    env["PATH"] = f"{bindir}{os.pathsep}{env['PATH']}"
+    subprocess.run(["bash", "-c", script], cwd=tmp_path, env=env, check=True, capture_output=True, timeout=60)
+    return log.read_text().splitlines(), (tmp_path / "url").read_text()
+
+
+def test_test_pg_publishes_postgres_on_loopback_only(tmp_path: Path):
+    """A bare `-p PORT:5432` publishes on every interface, and Docker's rules bypass ufw —
+    the container's superuser would be reachable from the contributor's whole network."""
+    run = next(line for line in _run_test_pg(tmp_path)[0] if line.startswith("run "))
+    published = re.findall(r"-p (\S+)", run)
+    assert published, run
+    assert all(p.startswith("127.0.0.1:") for p in published), f"test:pg publishes PostgreSQL beyond loopback: {published}"
+
+
+def test_test_pg_does_not_use_a_committed_password(tmp_path: Path):
+    """The container's user is the superuser; a password in the public repo is no password."""
+    _, first = _run_test_pg(tmp_path / "a")
+    _, second = _run_test_pg(tmp_path / "b")
+    assert "pgtest:pgtest@" not in first
+    assert first != second, "test:pg reuses the same PostgreSQL password on every run"
+
+
+def test_db_to_postgres_does_not_ask_for_the_password_on_the_command_line():
+    """argv is readable by every local user through /proc/<pid>/cmdline, and lands in shell
+    history — the task must take the target URL from the environment."""
+    task = _tasks()["db:to-postgres"]
+    text = yaml.safe_dump({k: task.get(k) for k in ("summary", "preconditions")})
+    assert ":PASS@" not in text, "db:to-postgres still tells operators to put the password in --postgres-url"
+    assert "POSTGRES_TARGET_URL" in text
+
+
+def test_sqlite_to_postgres_reads_the_target_url_from_the_environment(monkeypatch):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("sqlite_to_postgres", REPO_ROOT / "scripts" / "sqlite_to_postgres.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    seen = {}
+    monkeypatch.setattr(mod, "copy_database", lambda src, dst: seen.setdefault("url", dst))
+    monkeypatch.setattr(mod, "verify", lambda src, dst: [])
+    monkeypatch.setenv("POSTGRES_TARGET_URL", "postgresql+psycopg2://u:secret@db:5432/lt")
+    monkeypatch.setattr("sys.argv", ["sqlite_to_postgres.py", "--sqlite-url", "sqlite:///x.db"])
+    assert mod.main() == 0
+    assert seen["url"] == "postgresql+psycopg2://u:secret@db:5432/lt"

@@ -14,9 +14,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib/common.sh
 . "$SCRIPT_DIR/lib/common.sh"
 
+[ ! -L .env ] || die "refusing a symlinked .env"
 if [ ! -f .env ]; then
   [ -f .env.example ] || die ".env.example not found — run this from the project root."
-  cp .env.example .env
+  # Owner-only from the start: the secrets written below must not be readable by others.
+  (umask 077 && cp .env.example .env)
   # gen_secrets.py --write fills only empty/placeholder keys and prints the admin
   # password once. Using it here rather than a second generator means `task gen-secrets`
   # and `task setup` agree by construction about what a placeholder is and which keys

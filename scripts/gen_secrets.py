@@ -19,9 +19,11 @@ app/config.py; tests/test_gen_secrets.py pins that parity.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import secrets
 import sys
+import tempfile
 from pathlib import Path
 
 # The one colour decision — see scripts/cli_color.py. Sibling import, the
@@ -84,8 +86,24 @@ def print_block(values: dict[str, str]) -> None:
     print(f"in DATABASE_URL without escaping. Run with --write to apply to .env.{c['off']}")
 
 
+def write_private(path: Path, text: str) -> None:
+    """Publish a complete 0600 file without exposing new secrets through an old inode."""
+    if path.is_symlink():
+        raise ValueError(f"Refusing to replace a symlink: {path}")
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
 def write_env(values: dict[str, str], force: bool) -> int:
     env_path = PROJECT_ROOT / ".env"
+    if env_path.is_symlink():
+        raise ValueError("Refusing to read a symlink: .env")
     if not env_path.exists():
         c = colors(stream=sys.stderr)
         print(f"{c['bold']}{c['red']}ERROR:{c['off']} .env not found. Create it first: cp .env.example .env", file=sys.stderr)
@@ -109,7 +127,7 @@ def write_env(values: dict[str, str], force: bool) -> int:
         else:
             skipped.append(key)
 
-    env_path.write_text(text, encoding="utf-8")
+    write_private(env_path, text)
 
     c = colors()
     if written:

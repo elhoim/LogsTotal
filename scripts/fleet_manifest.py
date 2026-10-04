@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from typing import Any
@@ -68,6 +69,73 @@ OPTION_KEYS = (
     "keep_releases",
     "remote_dir",
 )
+
+#: An adopted record is fetched off another machine, and its options are exported as DEPLOY_*
+#: and pasted into shell — DEPLOY_REMOTE_DIR into every heredoc host_exec runs. So a value is
+#: read back only if it cannot be more than one line, and remote_dir only if it is a plain
+#: absolute path.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+_REMOTE_DIR = re.compile(r"/[A-Za-z0-9._/-]+")
+_HOST = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*(?:@[A-Za-z0-9_][A-Za-z0-9._-]*)?")
+_OPTION_PATTERNS = {
+    "vpn": r"(?:none|wireconf|tailscale|wireguard|auto)",
+    "vpn_port": r"[0-9]{1,5}",
+    "vpn_network": r"[0-9a-fA-F.:/]+",
+    "vpn_hub_endpoint": r"[A-Za-z0-9_.:\[\]-]+",
+    "cp_address": r"[A-Za-z0-9_.:\[\]-]+",
+    "cp_bind_address": r"[A-Za-z0-9_.:\[\]-]+",
+    "domain": r"[A-Za-z0-9_.-]+",
+    "proxy_tls": r"(?:acme|internal|custom|off)",
+    "basic_auth_user": r"[A-Za-z0-9_.@+-]+",
+    "huey_workers": r"[0-9]+",
+    "keep_releases": r"[0-9]+",
+}
+
+
+def _safe_option(key: str, value: Any) -> bool:
+    if not isinstance(value, str) or _CONTROL.search(value):
+        return False
+    if not value:
+        return True
+    if key == "remote_dir":
+        return bool(_REMOTE_DIR.fullmatch(value)) and value.strip("/") != "" and not any(part in (".", "..") for part in value.split("/"))
+    return bool(re.fullmatch(_OPTION_PATTERNS[key], value))
+
+
+def validate_record(manifest: dict[str, Any]) -> None:
+    """Reject unsafe data before an imported record becomes deployment configuration."""
+    options, hosts, release = (manifest.get(k, default) for k, default in (("options", {}), ("hosts", []), ("release", {})))
+    if not isinstance(options, dict) or not isinstance(hosts, list) or not isinstance(release, dict):
+        raise ValueError("invalid fleet record structure")
+    for key in OPTION_KEYS:
+        if key in options and not _safe_option(key, options[key]):
+            raise ValueError(f"unsafe fleet option: {key}")
+    for host in hosts:
+        if not isinstance(host, dict) or not isinstance(host.get("entry"), str) or not _HOST.fullmatch(host["entry"]):
+            raise ValueError("invalid fleet host")
+        address = host.get("address", "")
+        if address and (not isinstance(address, str) or not _HOST.fullmatch(address)):
+            raise ValueError("invalid fleet host address")
+    cp = manifest.get("control_plane", "")
+    if cp and (not isinstance(cp, str) or not _HOST.fullmatch(cp)):
+        raise ValueError("invalid control-plane host")
+    for value in release.values():
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_.:/?=%+#@~,-]*", value):
+            raise ValueError("unsafe fleet release field")
+
+
+def trusted_options(manifest: dict[str, Any]) -> dict[str, str]:
+    """The record's options, restricted to OPTION_KEYS and to values safe to hand to shell."""
+    options = manifest.get("options", {})
+    if not isinstance(options, dict):
+        return {}
+    out = {}
+    for key in OPTION_KEYS:
+        value = options.get(key, "")
+        if not _safe_option(key, value) or value == "":
+            continue
+        out[key] = value
+    return out
 
 
 def _blank() -> dict[str, Any]:
@@ -318,7 +386,7 @@ def to_deploy_env(manifest: dict[str, Any]) -> str:
             entry = host.get("address", "") or manifest.get("options", {}).get("cp_address", "") or entry
             unreachable = entry == LOCAL_ENTRY
         entries.append(entry)
-    options = manifest.get("options", {})
+    options = trusted_options(manifest)
     lines = [
         "# Written by `./logstotal fleet:pull` from a control plane's fleet/manifest.json.",
         "# It carries the fleet's SHAPE and its settings — never its secrets.",
@@ -353,6 +421,14 @@ def to_deploy_env(manifest: dict[str, Any]) -> str:
     release_server = manifest.get("release", {}).get("server", "")
     if release_server:
         lines.append(f"RELEASE_REPO_URL={release_server}")
+    # One line per key is the file's whole grammar: a newline in any value is a key of its own.
+    # Refused rather than dropped, raw options included, so a tampered record is not half-pulled.
+    raw = manifest.get("options", {})
+    values = [str(v) for v in raw.values()] if isinstance(raw, dict) else []
+    values += [line for line in lines if not line.startswith("#")]
+    for value in values:
+        if _CONTROL.search(value):
+            raise ValueError(f"refusing a control character in the fleet record: {value!r}")
     return "\n".join(lines) + "\n"
 
 
@@ -423,7 +499,8 @@ def main(argv: list[str] | None = None) -> int:
         help="emit `local` for the control plane's own entry (see hosts_line)",
     )
     sub.add_parser("deploy-env", help="render the record as a deploy.env")
-    sub.add_parser("options", help="print every recorded option as key=value lines")
+    sub.add_parser("options", help="print the recorded OPTION_KEYS as key=value lines")
+    sub.add_parser("validate", help="validate an imported record before using it")
 
     p_get = sub.add_parser("get", help="print one option value, or nothing")
     p_get.add_argument("key")
@@ -438,6 +515,14 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     manifest = load(args.file)
+    if args.command in ("validate", "hosts", "deploy-env", "portable", "release"):
+        try:
+            validate_record(manifest)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+    if args.command == "validate":
+        return 0
 
     if args.command == "intent":
         set_intent(
@@ -468,12 +553,16 @@ def main(argv: list[str] | None = None) -> int:
         if line:
             print(line)
     elif args.command == "options":
-        for key, value in sorted(manifest.get("options", {}).items()):
+        for key, value in sorted(trusted_options(manifest).items()):
             print(f"{key}={value}")
     elif args.command == "deploy-env":
-        sys.stdout.write(to_deploy_env(manifest))
+        try:
+            sys.stdout.write(to_deploy_env(manifest))
+        except ValueError as exc:
+            print(exc, file=sys.stderr)
+            return 1
     elif args.command == "get":
-        print(manifest.get("options", {}).get(args.key, ""))
+        print(trusted_options(manifest).get(args.key, ""))
     elif args.command == "release":
         print(manifest.get("release", {}).get(args.key, ""))
     elif args.command == "portable":

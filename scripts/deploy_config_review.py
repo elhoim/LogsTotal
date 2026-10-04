@@ -652,6 +652,7 @@ REVIEWED_KEYS = (
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show a LogsTotal fleet's settings and where they disagree")
+    parser.add_argument("--set-env", action="append", default=[], choices=["DEPLOY_BASIC_AUTH_PASSWORD", "DEPLOY_BASIC_AUTH_HASH"], help="read a credential from the environment")
     parser.add_argument(
         "--set",
         action="append",
@@ -687,7 +688,9 @@ def main(argv: list[str] | None = None) -> int:
                 out[key] = val
         return out
 
-    review = build_review(pairs(args.set), pairs(args.source))
+    values = pairs(args.set)
+    values.update({key: os.environ.get(key, "") for key in args.set_env})
+    review = build_review(values, pairs(args.source))
     if args.format == "json":
         plan = None
         if args.plan_host or args.plan_count or args.plan_version:

@@ -132,7 +132,7 @@ do_postgres() {
     # falls through to host tools below.
     info "dumping via the running postgres container"
     if [ -n "$PG_URL" ]; then
-      docker compose exec -T postgres pg_dump "$PG_URL" > "$TMP_SQL"
+      docker compose exec -T "${PG_EXEC_ENV[@]}" postgres pg_dump "$PG_URL" > "$TMP_SQL"
     else
       docker compose exec -T postgres pg_dump -U "$PG_USER" "$PG_DB" > "$TMP_SQL"
     fi
@@ -333,7 +333,7 @@ do_restore_postgres() {
     else
       PG_RESTORE_ARGS=(-U "$PG_USER" "$PG_DB")
     fi
-    ( set -o pipefail; gunzip -c "$BACKUP" | docker compose exec -T postgres psql $PSQL_RESTORE_OPTS "${PG_RESTORE_ARGS[@]}" ) \
+    ( set -o pipefail; gunzip -c "$BACKUP" | docker compose exec -T "${PG_EXEC_ENV[@]}" postgres psql $PSQL_RESTORE_OPTS "${PG_RESTORE_ARGS[@]}" ) \
       || die "Restore failed — the database was left unchanged (--single-transaction rolled back)."
   elif command -v psql >/dev/null 2>&1; then
     if [ -n "$PG_URL" ]; then

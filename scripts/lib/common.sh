@@ -209,14 +209,20 @@ build_ssh_opts() {
   # The length is re-checked below anyway, because being wrong about this breaks everything
   # rather than slowing
   # it down: over budget, we simply go without multiplexing.
+  #
+  # A fixed name in /tmp is one any local user can create first, and ssh trusts whatever
+  # socket it finds in the ControlPath. So the directory is used only when it is a real
+  # directory (not a symlink) owned by us and chmod 700 took; anything else means no
+  # multiplexing. /tmp is sticky, so once we own it nobody else can swap it out.
   local cm_dir cm_path cm_uid
   cm_uid=$(id -u 2>/dev/null || echo 0)
   cm_dir="/tmp/.lt-ssh-${cm_uid}"
   cm_path="${cm_dir}/%C"
   if [ "${#cm_path}" -gt 90 ] || ! mkdir -p "$cm_dir" 2>/dev/null; then
     cm_path=""
-  else
-    chmod 700 "$cm_dir" 2>/dev/null || true
+  elif [ -L "$cm_dir" ] || [ ! -d "$cm_dir" ] || [ ! -O "$cm_dir" ] || ! chmod 700 "$cm_dir" 2>/dev/null; then
+    warn "${cm_dir} is not a private directory of ours — SSH connection sharing disabled"
+    cm_path=""
   fi
 
   SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o RequestTTY=no
@@ -359,6 +365,41 @@ host_exec() {
   else
     ssh "${SSH_OPTS[@]}" "$(to_target "$host")" bash -c "$(shquote "$*")"
   fi
+}
+
+# host_private_dir HOST KIND — preserve the exact path returned by mktemp.
+host_private_dir() {
+  local host="$1" kind="$2" d
+  if truthy "${DEPLOY_DRY_RUN:-}"; then
+    printf '/tmp/logstotal-%s.XXXXXX' "$kind"
+    return 0
+  fi
+  d=$(host_exec "$host" "mktemp -d \"\${TMPDIR:-/tmp}/logstotal-${kind}.XXXXXX\"") || return 1
+  case "$d" in
+    /*/logstotal-${kind}.??????) ;;
+    *) die "Could not create a private staging directory on $host" ;;
+  esac
+  case "$d" in *$'\n'*|*$'\r'*) die "Invalid staging directory on $host" ;; esac
+  printf '%s' "$d"
+}
+
+# Stage privately and atomically replace .env, including the passwordless-sudo path.
+host_install_env() {
+  local src="$1" host="$2" dir="$3" tmp body rc=0
+  tmp=$(host_private_dir "$host" env) || return 1
+  if ! host_copy_to "$src" "$host" "$tmp/env"; then
+    host_exec "$host" "rm -rf -- $(shquote "$tmp")" >/dev/null || true
+    return 1
+  fi
+  body="set -e
+mkdir -p $(shquote "$dir")
+t=\$(mktemp $(shquote "$dir/.env.XXXXXX"))
+trap 'rm -f -- \"\$t\"' EXIT
+install -m 600 $(shquote "$tmp/env") \"\$t\"
+mv -f -- \"\$t\" $(shquote "$dir/.env")"
+  host_exec "$host" "bash -c $(shquote "$body") 2>/dev/null || sudo -n bash -c $(shquote "$body")" || rc=$?
+  host_exec "$host" "rm -rf -- $(shquote "$tmp")" >/dev/null || true
+  return "$rc"
 }
 
 # host_copy_to SRC HOST DEST — copy a local file to HOST.
@@ -725,6 +766,13 @@ resolve_deploy_hosts() {
 # resolve_pg_conn — sets PG_HOST/PG_PORT/PG_USER/PG_DB from POSTGRES_HOST/PORT/USER/DB
 # (defaults localhost/5432/logstotal/logstotal) and PG_URL from DATABASE_URL with the
 # SQLAlchemy +asyncpg/+psycopg2 driver suffixes stripped (libpq tools don't understand them).
+#
+# A password in the URL is moved out of it and exported as PGPASSWORD, and PG_EXEC_ENV is
+# set to the `-e PGPASSWORD` that forwards it through `docker compose exec` by name. libpq
+# tools do not scrub argv, so a URL carrying it would sit in `ps` for the whole dump or
+# restore — and through `docker compose exec` twice, in the client's argv and in the
+# container process's, both in the host's process table. The URL reaches python3 through
+# the environment for the same reason.
 resolve_pg_conn() {
   # shellcheck disable=SC2034  # consumed by sourcing scripts
   PG_HOST="${POSTGRES_HOST:-localhost}"
@@ -739,6 +787,37 @@ resolve_pg_conn() {
   if [ -n "${DATABASE_URL:-}" ] && echo "$DATABASE_URL" | grep -q "postgres"; then
     # shellcheck disable=SC2034  # consumed by sourcing scripts
     PG_URL=$(printf '%s' "$DATABASE_URL" | sed -e 's/+asyncpg//' -e 's/+psycopg2//')
+    local pg_parts pg_password
+    # Query parameters override userinfo in libpq, including percent-encoded keys.
+    # A sentinel preserves trailing newlines across command substitution.
+    pg_parts=$(LT_PG_URL="$PG_URL" python3 -c '
+import os
+from urllib.parse import unquote, urlsplit
+u = urlsplit(os.environ["LT_PG_URL"])
+password = unquote(u.password) if u.password is not None else os.environ.get("PGPASSWORD", "")
+query = []
+for part in u.query.split("&"):
+    key, _, value = part.partition("=")
+    if unquote(key) == "password":
+        password = unquote(value)
+    else:
+        query.append(part)
+netloc = u.netloc
+if "@" in netloc:
+    user, _, host = netloc.rpartition("@")
+    netloc = user.partition(":")[0] + "@" + host
+print(u._replace(netloc=netloc, query="&".join(query)).geturl())
+print(password + ".", end="")
+') || die "Could not read the PostgreSQL connection URL."
+    PG_URL=${pg_parts%%$'\n'*}
+    pg_password=${pg_parts#*$'\n'}
+    export PGPASSWORD="${pg_password%.}"
+  fi
+  # shellcheck disable=SC2034  # consumed by sourcing scripts
+  PG_EXEC_ENV=()
+  if [ -n "${PGPASSWORD:-}" ]; then
+    # shellcheck disable=SC2034  # consumed by sourcing scripts
+    PG_EXEC_ENV=(-e PGPASSWORD)
   fi
 }
 
@@ -752,7 +831,7 @@ compose_postgres_running() {
 configured_postgres_container() {
   local host="${POSTGRES_HOST:-postgres}"
   if [ -n "$PG_URL" ]; then
-    host=$(python3 -c 'import sys; from urllib.parse import urlsplit; print(urlsplit(sys.argv[1]).hostname or "")' "$PG_URL")
+    host=$(LT_PG_URL="$PG_URL" python3 -c 'import os; from urllib.parse import urlsplit; print(urlsplit(os.environ["LT_PG_URL"]).hostname or "")')
   fi
   [ "$host" = postgres ] && compose_postgres_running
 }
@@ -959,12 +1038,16 @@ config_review() {
     # the unresolved value describes a tunnel that will not be built.
     if [ "$key" = "DEPLOY_VPN" ] && [ -n "${VPN_MODE:-}" ]; then
       args+=(--set "DEPLOY_VPN=${VPN_MODE}")
+    elif { [ "$key" = "DEPLOY_BASIC_AUTH_PASSWORD" ] || [ "$key" = "DEPLOY_BASIC_AUTH_HASH" ]; } && [ -n "${!key:-}" ]; then
+      # Keep credentials off argv while retaining the review's placeholder diagnostics.
+      args+=(--set-env "$key")
     elif [ -n "${!key:-}" ]; then
       args+=(--set "${key}=${!key}")
     fi
     args+=(--source "${key}=$(deploy_env_source "$key")")
   done
-  run_py "$module" --format "$format" "$@" "${args[@]}"
+  DEPLOY_BASIC_AUTH_PASSWORD="${DEPLOY_BASIC_AUTH_PASSWORD:-}" DEPLOY_BASIC_AUTH_HASH="${DEPLOY_BASIC_AUTH_HASH:-}" \
+    run_py "$module" --format "$format" "$@" "${args[@]}"
 }
 
 network_plan() {

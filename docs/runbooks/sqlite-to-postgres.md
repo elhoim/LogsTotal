@@ -22,7 +22,7 @@ In `.env`, add `postgres` to `COMPOSE_PROFILES` (keep any other profiles you use
 docker compose up -d postgres
 docker compose run --rm --no-deps web python3 -m app.migrations
 docker compose run --rm --no-deps web sh -c \
-  'python3 scripts/sqlite_to_postgres.py --sqlite-url sqlite:////data/logstotal.db --postgres-url "$SYNC_DATABASE_URL"'
+  'POSTGRES_TARGET_URL="$SYNC_DATABASE_URL" python3 scripts/sqlite_to_postgres.py --sqlite-url sqlite:////data/logstotal.db'
 ```
 
 These run inside the application image, where the SQLite file is mounted at `/data` and PostgreSQL is reachable as `postgres:5432`. No PostgreSQL port on the host and no other tooling is needed.
@@ -39,12 +39,12 @@ The copy should end with `OK — every table matched on row count`. Then start t
 Stop `./logstotal dev` and `./logstotal worker`, take a backup, and create an empty PostgreSQL database you can reach. Create the schema, then copy:
 
 ```bash
-SYNC_DATABASE_URL=postgresql+psycopg2://logstotal:PASS@localhost:5432/logstotal \
-  pdm run python3 -m app.migrations
-./logstotal db:to-postgres -- \
-  --sqlite-url sqlite:///logstotal.db \
-  --postgres-url postgresql+psycopg2://logstotal:PASS@localhost:5432/logstotal
+read -rs POSTGRES_TARGET_URL && export POSTGRES_TARGET_URL   # postgresql+psycopg2://logstotal:PASS@localhost:5432/logstotal
+SYNC_DATABASE_URL="$POSTGRES_TARGET_URL" pdm run python3 -m app.migrations
+./logstotal db:to-postgres -- --sqlite-url sqlite:///logstotal.db
 ```
+
+The copy reads the target from `POSTGRES_TARGET_URL`. Do not pass a password with `--postgres-url`: any local user can read a command line from the process list, and it stays in your shell history.
 
 Before restarting, point both database URLs at PostgreSQL: `+asyncpg` for `DATABASE_URL`, `+psycopg2` for `SYNC_DATABASE_URL`.
 

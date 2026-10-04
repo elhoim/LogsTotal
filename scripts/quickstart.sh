@@ -76,8 +76,10 @@ docker info >/dev/null 2>&1 || die "Docker daemon not running — start Docker, 
 ok "Docker ready"
 
 # ── 2. .env from .env.example (only if missing) ──
+[ ! -L .env ] || die "refusing a symlinked .env"
 if [ ! -f .env ]; then
-  cp .env.example .env
+  # Owner-only from the start: gen_secrets.py fills every secret into this file.
+  (umask 077 && cp .env.example .env)
   ok "Created .env from $(value .env.example)"
 else
   ok ".env already exists (kept as-is)"

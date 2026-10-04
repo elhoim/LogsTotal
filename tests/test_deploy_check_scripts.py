@@ -19,6 +19,7 @@ import re
 import shlex
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -59,7 +60,7 @@ def _run(
     # `task test` on a machine whose .env says `PROXY_TLS=off` fails three smoke tests.
     # `FORCE` is the Taskfile's own spelling for restores, and `FORCE=yes` disarms exactly
     # the overwrite refusal that test_env_scaffold_refuses_to_overwrite_existing_files pins.
-    for var in ("SSH_IDENTITY", "SMOKE_URL", "DOMAIN", "HEALTH_URL", "PROXY_TLS", "FORCE"):
+    for var in ("SSH_IDENTITY", "SMOKE_URL", "SMOKE_CACERT", "DOMAIN", "HEALTH_URL", "PROXY_TLS", "FORCE"):
         env.pop(var, None)
     # Point at an absent deploy.env so a real one can't leak in; tests that want
     # file-provided defaults override DEPLOY_ENV_FILE explicitly.
@@ -603,7 +604,7 @@ def test_smoke_verifies_public_certificates_and_looks_past_private_ones(tmp_path
     unverifiable certificate is a real finding rather than the expected state.
     """
     argv_log = tmp_path / "curl-argv.txt"
-    shim = _make_curl_shim(tmp_path, "000", record=argv_log)
+    shim = _make_tls_curl_shim(tmp_path, argv_log, trusted=False)
     _run(
         "smoke",
         tmp_path,
@@ -612,8 +613,87 @@ def test_smoke_verifies_public_certificates_and_looks_past_private_ones(tmp_path
     )
     calls = argv_log.read_text(encoding="utf-8").splitlines()
     assert calls, "the smoke test made no curl calls at all"
-    for call in calls:
+    probes = [call for call in calls if "%{http_code}" in call]
+    assert probes, calls
+    for call in probes:
         assert (" -k " in f" {call} ") == expect_insecure, f"{mode}: {call}"
+
+
+def _make_tls_curl_shim(tmp_path: Path, record: Path, *, trusted: bool) -> Path:
+    """A `curl` that behaves like one facing a certificate this machine does (not) trust.
+
+    Untrusted: exit 60 with `000` unless the call passed `-k` or `--cacert`. Either way the
+    argv is recorded, which is the point: what matters is which flags travel together.
+    """
+    d = tmp_path / "shim"
+    d.mkdir(exist_ok=True)
+    curl = d / "curl"
+    gate = "" if trusted else "case \" $* \" in *' -k '*|*' --cacert '*) ;; *) printf '000'; exit 60 ;; esac\n"
+    curl.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> {shlex.quote(str(record))}\n{gate}printf \'401\'\nexit 0\n')
+    curl.chmod(0o755)
+    return d
+
+
+@pytest.mark.parametrize("mode", ["internal", "custom"])
+def test_smoke_never_sends_the_password_over_an_unverified_certificate(tmp_path: Path, mode):
+    """`-k` accepts any certificate, so any on-path TLS endpoint could collect the basic-auth
+    header. Reachability may still be probed that way — the credentials may not."""
+    argv_log = tmp_path / "curl-argv.txt"
+    shim = _make_tls_curl_shim(tmp_path, argv_log, trusted=False)
+    result = _run(
+        "smoke",
+        tmp_path,
+        {"DOMAIN": "domain.example", "PROXY_TLS": mode, "BASIC_AUTH_USER": "ops", "BASIC_AUTH_PASS": "hunter2"},
+        path_prefix=shim,
+    )
+    calls = argv_log.read_text(encoding="utf-8").splitlines()
+    assert any(" -k " in f" {call} " for call in calls), f"{mode}: reachability was not probed at all: {calls}"
+    leaked = [call for call in calls if " -k " in f" {call} " and "hunter2" in call]
+    assert not leaked, f"{mode}: basic-auth password sent with certificate verification off: {leaked}"
+    output = result.stdout + result.stderr
+    assert "SMOKE_CACERT" in output, output
+    assert "hunter2" not in output
+
+
+@pytest.mark.parametrize("mode", ["internal", "custom"])
+def test_smoke_authenticates_against_the_ca_it_was_given(tmp_path: Path, mode):
+    """SMOKE_CACERT — Caddy's root.crt for `internal`, the issuing CA for `custom` — turns
+    verification back on, and with it the credentials."""
+    argv_log = tmp_path / "curl-argv.txt"
+    shim = _make_tls_curl_shim(tmp_path, argv_log, trusted=False)
+    ca = tmp_path / "logstotal-root.crt"
+    ca.write_text("-----BEGIN CERTIFICATE-----\n", encoding="utf-8")
+    _run(
+        "smoke",
+        tmp_path,
+        {"DOMAIN": "domain.example", "PROXY_TLS": mode, "BASIC_AUTH_USER": "ops", "BASIC_AUTH_PASS": "hunter2", "SMOKE_CACERT": str(ca)},
+        path_prefix=shim,
+    )
+    calls = argv_log.read_text(encoding="utf-8").splitlines()
+    assert calls, "the smoke test made no curl calls at all"
+    for call in calls:
+        assert " -k " not in f" {call} ", call
+        assert f"--cacert {ca}" in call, call
+        assert "-u ops:hunter2" in call, call
+
+
+def test_smoke_keeps_verifying_a_custom_certificate_this_machine_already_trusts(tmp_path: Path):
+    """`custom` may well be CA-issued, and an `internal` root may already be installed here:
+    then nothing needs looking past, and the credentials go over a verified connection."""
+    argv_log = tmp_path / "curl-argv.txt"
+    shim = _make_tls_curl_shim(tmp_path, argv_log, trusted=True)
+    _run(
+        "smoke",
+        tmp_path,
+        {"DOMAIN": "domain.example", "PROXY_TLS": "custom", "BASIC_AUTH_USER": "ops", "BASIC_AUTH_PASS": "hunter2"},
+        path_prefix=shim,
+    )
+    calls = argv_log.read_text(encoding="utf-8").splitlines()
+    probes = [call for call in calls if "%{http_code}" in call]
+    assert probes, calls
+    for call in probes:
+        assert " -k " not in f" {call} ", call
+        assert "-u ops:hunter2" in call, call
 
 
 def test_smoke_reads_the_deploy_env_spelling_of_domain(tmp_path: Path):
@@ -1152,6 +1232,40 @@ def test_env_scaffold_force_allows_regeneration(tmp_path: Path):
     assert cp.read_text() != original, "FORCE=yes should regenerate the secrets"
 
 
+@pytest.fixture()
+def umask_022():
+    old = os.umask(0o022)
+    try:
+        yield
+    finally:
+        os.umask(old)
+
+
+def test_env_scaffold_files_are_owner_only(tmp_path: Path, umask_022):
+    """Both files carry every shared fleet secret, and the next-steps text scp's them to the
+    hosts, where a new file keeps the source mode. Under the usual umask they must still be
+    0600 in a 0700 directory — deploy-env-push.sh installs them the same way."""
+    result = _run("env-scaffold", tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    out = tmp_path / "deploy-envs"
+    assert stat.S_IMODE(out.stat().st_mode) == 0o700
+    for name in ("control-plane.env", "worker.env"):
+        assert stat.S_IMODE((out / name).stat().st_mode) == 0o600, name
+
+
+def test_env_scaffold_force_tightens_a_world_readable_scaffold(tmp_path: Path, umask_022):
+    first = _run("env-scaffold", tmp_path)
+    assert first.returncode == 0, first.stdout + first.stderr
+    for path in (tmp_path / "deploy-envs").glob("*.env"):
+        path.chmod(0o644)
+
+    forced = _run("env-scaffold", tmp_path, {"FORCE": "yes"})
+
+    assert forced.returncode == 0, forced.stdout + forced.stderr
+    for name in ("control-plane.env", "worker.env"):
+        assert stat.S_IMODE((tmp_path / "deploy-envs" / name).stat().st_mode) == 0o600, name
+
+
 # ── SSH identity tilde expansion (scripts/lib/common.sh::build_ssh_opts) ─────
 #
 # SSH_IDENTITY usually arrives from deploy.env, which is read with grep/cut and never
@@ -1441,9 +1555,9 @@ def _local_push(tmp_path: Path, remote_dir: Path, extra: dict[str, str] | None =
 
 def test_env_push_really_installs_the_file_at_mode_600(tmp_path: Path):
     remote = tmp_path / "opt"
-    # The staging path is `/tmp/logstotal-env.$$` — a *remote* path for a real host, which
-    # is why it cannot honour the local TMPDIR — and the `local` sentinel makes it land
-    # here. So this has to look at the shared /tmp, and it does so as a before/after diff:
+    # The staging copy goes in a mktemp directory on the target — for the `local` sentinel,
+    # under this machine's TMPDIR, which is /tmp unless set. So this looks at the shared
+    # /tmp for anything left behind, and it does so as a before/after diff:
     # a bare glob asserts on every process on the machine, which under `pytest -n auto`
     # means a sibling worker's in-flight copy fails a test about our own cleanup.
     before = set(Path("/tmp").glob("logstotal-env.*"))
@@ -1454,6 +1568,45 @@ def test_env_push_really_installs_the_file_at_mode_600(tmp_path: Path):
     assert installed.stat().st_mode & 0o077 == 0
     left_behind = set(Path("/tmp").glob("logstotal-env.*")) - before
     assert not left_behind, f"the staging copy must not be left behind: {sorted(left_behind)}"
+
+
+def test_env_push_does_not_stage_secrets_through_a_planted_tmp_file(tmp_path: Path):
+    """The staging copy used to be `/tmp/logstotal-env.$$` — a name built from a PID
+    anyone can see in `ps`. A local user who creates that file first keeps owning it,
+    `cp` writes the fleet secrets into their inode, and an fd they opened beforehand
+    reads them after the `rm -f`. The wrapper below execs the script in place, so its
+    `$$` is the PID the test planted against."""
+    remote = tmp_path / "opt"
+    _fleet_env(tmp_path, "local")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("DEPLOY_")}
+    env.update(
+        {
+            "DEPLOY_ENV_FILE": str(tmp_path / "deploy.env.absent"),
+            "DEPLOY_HOSTS": "local",
+            "DEPLOY_REMOTE_DIR": str(remote),
+            "TMPDIR": str(tmp_path),
+        }
+    )
+    proc = subprocess.Popen(
+        ["bash", "-c", 'echo $$; read -r _; exec bash "$0"', str(SCRIPTS["env-push"])],
+        cwd=tmp_path,
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    planted = Path(f"/tmp/logstotal-env.{int(proc.stdout.readline())}")
+    try:
+        planted.touch(mode=0o666)
+        with planted.open("rb") as held:
+            out, err = proc.communicate("go\n", timeout=60)
+            leaked = held.read()
+    finally:
+        planted.unlink(missing_ok=True)
+    assert proc.returncode == 0, out + err
+    assert (remote / ".env").read_text(encoding="utf-8").startswith("SECRET_KEY=abc")
+    assert b"SECRET_KEY" not in leaked, "the secrets were written into a file another user planted"
 
 
 def test_env_push_refuses_to_overwrite_and_names_the_keys_it_would_lose(tmp_path: Path):

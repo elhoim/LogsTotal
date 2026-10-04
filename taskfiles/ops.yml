@@ -486,8 +486,10 @@ tasks:
       - mkdir -p data uploads backups certs
       - |
         if [ -f data/.bundle-images ]; then
-          . data/.bundle-images
-          export LOGSTOTAL_IMAGE_TAG="$tag" LOGSTOTAL_NO_BUILD=true
+          # Parsed, never sourced: data/ is writable from inside the web container.
+          tag=$(sed -n '/^tag=[A-Za-z0-9_][A-Za-z0-9_.-]\{0,127\}$/{s/^tag=//p;q;}' data/.bundle-images)
+          export LOGSTOTAL_NO_BUILD=true
+          if [ -n "$tag" ]; then export LOGSTOTAL_IMAGE_TAG="$tag"; fi
         fi
         if [ "${LOGSTOTAL_NO_BUILD:-false}" = "true" ]; then
           docker compose up -d --no-build --pull never
@@ -576,8 +578,10 @@ tasks:
     cmds:
       - |
         if [ -f data/.bundle-images ]; then
-          . data/.bundle-images
-          export LOGSTOTAL_IMAGE_TAG="$tag" LOGSTOTAL_NO_BUILD=true
+          # Parsed, never sourced: data/ is writable from inside the web container.
+          tag=$(sed -n '/^tag=[A-Za-z0-9_][A-Za-z0-9_.-]\{0,127\}$/{s/^tag=//p;q;}' data/.bundle-images)
+          export LOGSTOTAL_NO_BUILD=true
+          if [ -n "$tag" ]; then export LOGSTOTAL_IMAGE_TAG="$tag"; fi
         fi
         if [ "${LOGSTOTAL_NO_BUILD:-false}" = "true" ]; then
           docker compose -f docker-compose.worker.yml up -d --no-build --pull never
