@@ -176,6 +176,66 @@ def test_corrupt_json_is_not_a_successful_clean_scan(real_adapter, tmp_path):
     assert "Invalid" in result.error
 
 
+@pytest.mark.parametrize("log_type", ["json_evtx", "json_winlogbeat"])
+def test_utf8_bom_preserves_all_events_and_source_bytes(real_adapter, tmp_path, monkeypatch, log_type):
+    from app.detection.detector import detect_log_type
+
+    if log_type == "json_evtx":
+        event = {"Channel": "Microsoft-Windows-Sysmon/Operational", "EventID": 1, "Image": "evil.exe"}
+    else:
+        event = {"winlog": {"channel": "Microsoft-Windows-Sysmon/Operational", "event_id": 1}, "process": {"executable": "evil.exe"}}
+    payload = b"\xef\xbb\xbf" + (json.dumps(event) + "\n\n" + json.dumps(event) + "\n").encode()
+    source = tmp_path / "event.json"
+    source.write_bytes(payload)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr("tempfile.tempdir", str(scratch))
+    assert detect_log_type(source).value == log_type
+
+    result = real_adapter.run(source, tmp_path / "out", log_type=log_type)
+
+    assert result.success, result.error
+    assert sum(f.count for f in result.findings) == 2
+    assert source.read_bytes() == payload
+    assert not list(scratch.iterdir())
+    assert (tmp_path / "out" / "event_rsigma.json").is_file()
+
+
+@pytest.mark.parametrize("failure", ["malformed", "cancelled", "timeout"])
+def test_bom_temporary_input_is_removed_on_failure(real_adapter, tmp_path, monkeypatch, failure):
+    import threading
+
+    import app.tools.rsigma as module
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr("tempfile.tempdir", str(scratch))
+    source = tmp_path / "event.json"
+    payload = b"\xef\xbb\xbf" + (b"{bad JSON}" if failure == "malformed" else b"{}")
+    source.write_bytes(payload)
+    cancel = threading.Event()
+    check_budget = real_adapter._check_budget
+    monotonic = module.time.monotonic
+
+    def check_copy_budget(deadline):
+        if list(scratch.iterdir()):
+            if failure == "cancelled":
+                cancel.set()
+            elif failure == "timeout":
+                monkeypatch.setattr(module.time, "monotonic", lambda: max(monotonic(), deadline + 1))
+        check_budget(deadline)
+
+    monkeypatch.setattr(real_adapter, "_check_budget", check_copy_budget)
+
+    result = real_adapter.run(source, tmp_path / "out", log_type="json_evtx", cancel_event=cancel)
+
+    assert not result.success
+    assert {"malformed": "Invalid", "cancelled": "cancelled", "timeout": "timed out"}[failure] in result.error
+    assert not list(scratch.iterdir())
+    assert source.read_bytes() == payload
+    assert not list((tmp_path / "out").glob("*_rsigma.json"))
+
+
 @pytest.mark.parametrize(
     "sample,log_type,event_count,rule_id",
     [

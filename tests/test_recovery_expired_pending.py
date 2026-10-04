@@ -15,7 +15,7 @@ import pytest
 from app.config import settings
 from app.constants import RECOVERY_MSG_ADMIN, RECOVERY_MSG_EXPIRED
 from app.database import utc_now_naive
-from app.models import AnalysisJob, JobStatus, LogFile, LogType, TaskResult, TaskStatus, WorkflowDef
+from app.models import AnalysisJob, Finding, JobStatus, LogFile, LogType, TaskResult, TaskStatus, WorkflowDef
 from app.recovery import EXPIRY_GRACE_SECONDS, recover_stale_jobs
 from app.redis_client import CANCEL_PREFIX, HEARTBEAT_PREFIX, cancel_flag_value
 
@@ -159,3 +159,29 @@ async def test_recovery_settles_all_unfinished_tasks_and_preserves_results(async
         assert all(task.status.value == outcome and task.finished_at == job.finished_at for task in unfinished)
         assert all(task.error_message == job.error_message for task in unfinished)
     assert await recover_stale_jobs(async_db, fake_redis, message=RECOVERY_MSG_ADMIN) == 0
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_recovery_rolls_up_committed_detections(async_db, fake_redis, make_pending_job, cancelled):
+    from app.constants import POST_TASK_ANALYTICS
+    from app.json_utils import loads
+
+    job = await make_pending_job(10)
+    job.status = JobStatus.RUNNING
+    done = TaskResult(job_id=job.id, tool_name="rsigma", status=TaskStatus.COMPLETED, findings_count=1)
+    async_db.add_all(
+        [done, TaskResult(job_id=job.id, tool_name="hayabusa", status=TaskStatus.RUNNING), TaskResult(job_id=job.id, tool_name=POST_TASK_ANALYTICS, status=TaskStatus.PENDING)]
+    )
+    await async_db.flush()
+    async_db.add(Finding(task_result_id=done.id, rule_name="Persisted detection", severity="high", count=3))
+    await async_db.commit()
+    if cancelled:
+        fake_redis.set(f"{CANCEL_PREFIX}{job.id}", cancel_flag_value(job))
+
+    await recover_stale_jobs(async_db, fake_redis, message=RECOVERY_MSG_ADMIN)
+
+    await async_db.refresh(job)
+    assert job.total_findings == 3
+    assert loads(job.severity_summary) == {"critical": 0, "high": 3, "medium": 0, "low": 0, "informational": 0}
+    assert job.score_ratio == ("1/1" if cancelled else "1/2")
+    assert job.status == (JobStatus.CANCELLED if cancelled else JobStatus.FAILED)

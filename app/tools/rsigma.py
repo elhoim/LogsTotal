@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import time
 from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -118,6 +120,24 @@ class RsigmaAdapter(ToolAdapter):
             if (category and category not in CATEGORIES) or (service and service not in SERVICES) or source.get("product") != "windows":
                 raise ValueError(f"Unsupported Windows logsource in {path}: {source}")
 
+    @contextmanager
+    def _prepared_input(self, file_path: Path, deadline: float) -> Iterator[Path]:
+        """Strip a JSON BOM for both validation and the CLI, leaving evidence intact."""
+        if self._log_type == "evtx":
+            yield file_path
+            return
+        with file_path.open("rb") as source:
+            if source.read(3) != b"\xef\xbb\xbf":
+                yield file_path
+                return
+            with tempfile.TemporaryDirectory(prefix="logstotal-rsigma-") as temp_dir:
+                prepared = Path(temp_dir) / file_path.name
+                with prepared.open("wb") as dest:
+                    while chunk := source.read(1024 * 1024):
+                        self._check_budget(deadline)
+                        dest.write(chunk)
+                yield prepared
+
     def _run_local(self, file_path: Path, output_file: Path) -> ToolOutput:
         # Upstream can skip malformed JSON lines and exit zero. Audit the stream
         # and its rule logsource mappings within the same timeout/cancellation budget.
@@ -125,23 +145,23 @@ class RsigmaAdapter(ToolAdapter):
         deadline = start + self._timeout_seconds
         try:
             self._validate_rules(deadline)
-            if self._log_type != "evtx":
-                with file_path.open("rb") as stream:
-                    for line_no, line in enumerate(stream, 1):
-                        self._check_budget(deadline)
-                        if not line.strip():
-                            continue
-                        if not isinstance(loads(line), dict):
-                            raise ValueError(f"line {line_no} is not an event object")
-            self._check_budget(deadline)
+            with self._prepared_input(file_path, deadline) as prepared:
+                if self._log_type != "evtx":
+                    with prepared.open("rb") as stream:
+                        for line_no, line in enumerate(stream, 1):
+                            self._check_budget(deadline)
+                            if not line.strip():
+                                continue
+                            if not isinstance(loads(line), dict):
+                                raise ValueError(f"line {line_no} is not an event object")
+                self._check_budget(deadline)
+                self._deadline = deadline
+                result = super()._run_local(prepared, output_file)
+                result.duration_ms = int((time.monotonic() - start) * 1000)
+                return result
         except (OSError, ValueError, yaml.YAMLError) as exc:
             error = str(exc) if str(exc) == "cancelled" else f"Invalid RSigma input or rules: {exc}"
             return ToolOutput(success=False, error=error, duration_ms=int((time.monotonic() - start) * 1000))
-        self._deadline = deadline
-        try:
-            result = super()._run_local(file_path, output_file)
-            result.duration_ms = int((time.monotonic() - start) * 1000)
-            return result
         finally:
             self._deadline = None
 

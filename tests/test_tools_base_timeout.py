@@ -5,10 +5,33 @@ from __future__ import annotations
 import sys
 import threading
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.tools.base import CANCELLED_ERROR, ToolAdapter
 from app.tools.chainsaw import ChainsawAdapter
+from app.tools.zircolite import ZircoliteAdapter
+
+
+@pytest.mark.parametrize("output", [None, "[]", '[{"title":"Partial hit","level":"high","count":1,"matches":[{}]}]'])
+def test_docker_nonzero_exit_fails_even_with_parseable_output(tmp_path, output):
+    output_file = tmp_path / "input_zircolite.json"
+    if output is not None:
+        output_file.write_text(output)
+    container = MagicMock()
+    container.wait.return_value = {"StatusCode": 137}
+    container.logs.return_value = b"Killed during analysis"
+    client = MagicMock()
+    client.containers.create.return_value = container
+    adapter = ZircoliteAdapter({"docker_image": "test/image", "rules_path": str(tmp_path)})
+
+    with patch("docker.from_env", return_value=client):
+        result = adapter.run(tmp_path / "input.evtx", tmp_path, log_type="evtx")
+
+    assert not result.success
+    assert "Killed during analysis" in result.error
+    assert not result.findings
 
 
 class _FakeProc:

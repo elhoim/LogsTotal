@@ -386,9 +386,10 @@ class ToolAdapter(ABC):
             finally:
                 container.remove(force=True)
 
-            if exit_code != 0 and not output_file.exists():
+            # A crashed container can leave valid but incomplete output behind.
+            if exit_code != 0:
                 duration_ms = int((time.monotonic() - t0) * 1000)
-                return ToolOutput(success=False, error=stdout or f"Container exited with code {exit_code}", duration_ms=duration_ms)
+                return ToolOutput(success=False, error=stdout or f"Container exited with code {exit_code}", stdout=stdout, duration_ms=duration_ms)
         except Exception as exc:
             duration_ms = int((time.monotonic() - t0) * 1000)
             err = str(exc)

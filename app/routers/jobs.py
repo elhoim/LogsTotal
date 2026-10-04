@@ -50,6 +50,7 @@ from app.intel.tactics import (
     _OTHER_TACTIC_COLOR,
     _hex_to_rgb,
 )
+from app.job_results import rollup_job_counts
 from app.jobs_query import COMPLETABLE_PREFIXES, IS_FLAGS, PREFIX_HELP, apply_jobs_query, describe, parse_jobs_query, query_errors
 from app.json_utils import loads as json_loads
 from app.models import (
@@ -1552,6 +1553,7 @@ async def job_cancel(
             tr.status = TaskStatus.CANCELLED
             tr.error_message = message
             tr.finished_at = utc_now_naive()
+        await db.run_sync(rollup_job_counts, job)
         await db.commit()
 
     await activity.record("job.cancel", request=request, user=user, target_type="job", target_id=str(job_id))

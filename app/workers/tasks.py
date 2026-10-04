@@ -20,15 +20,14 @@ from huey import crontab
 from app.config import settings
 from app.constants import (
     CANCEL_MSG_USER,
-    EMPTY_SEVERITY_SUMMARY,
     POST_TASK_ANALYTICS,
     POST_TASK_SIMILARITY,
     TERMINAL_AI_STATUSES,
     TERMINAL_JOB_STATUSES,
-    is_post_processing_task,
 )
 from app.database import get_sync_session, utc_now_naive
 from app.detection.workflow_runner import parse_workflow_yaml
+from app.job_results import rollup_job_counts as _rollup_job_counts
 from app.json_utils import dumps as json_dumps
 from app.json_utils import loads as json_loads
 from app.logging_config import bind as bind_log_context
@@ -755,6 +754,7 @@ def run_analysis(job_id: int):  # noqa: C901 — known debt: the job lifecycle (
         # ── Step 1: Pre-create all TaskResult rows (main thread, single commit) ──
         # work_items: (task_result_id, adapter, task_cfg, task_output_dir)
         work_items = []
+        configuration_failed = False
         for task_cfg in task_configs:
             tool_name = task_cfg.get("tool", "")
             if not tool_name:
@@ -773,7 +773,8 @@ def run_analysis(job_id: int):  # noqa: C901 — known debt: the job lifecycle (
                 task_cfg.setdefault("max_finding_details", site_settings.max_finding_details)
                 adapter = get_adapter(tool_name, task_cfg)
             except ValueError as exc:
-                task_result.status = TaskStatus.SKIPPED
+                configuration_failed = True
+                task_result.status = TaskStatus.FAILED
                 task_result.error_message = str(exc)
                 task_result.finished_at = utc_now_naive()
                 continue
@@ -808,14 +809,14 @@ def run_analysis(job_id: int):  # noqa: C901 — known debt: the job lifecycle (
 
         if not work_items:
             db.refresh(job)
-            _finalize_job(db, job, any_success=False, any_failure=False)
+            _finalize_job(db, job, any_success=False, any_failure=configuration_failed)
             return
 
         parallel = site_settings.parallel_execution and len(work_items) > 1
 
         # ── Step 2: Run tools + persist each result immediately ───────────────
         any_success = False
-        any_failure = False
+        any_failure = configuration_failed
 
         if parallel:
             # Per-job pool: TOOL_MAX_WORKERS is a per-job cap, so one job's tools
@@ -1060,38 +1061,6 @@ def _sweep_unfinished_task_results(db, job_id: int, status: TaskStatus, message:
         tr.status = status
         tr.error_message = tr.error_message or message
         tr.finished_at = now
-
-
-def _rollup_job_counts(db, job: AnalysisJob) -> None:
-    """Recompute score_ratio / total_findings / severity_summary from committed findings.
-
-    Findings are persisted per tool as each one completes (the progressive-results
-    pattern), so a job that dies part-way still has real findings in the database. Without
-    this the score card would read `0/0` and `0 findings` directly above a list of them —
-    in a detection product, the most dangerous possible way to be wrong.
-    """
-    from sqlalchemy.orm import joinedload
-
-    task_results = db.query(TaskResult).options(joinedload(TaskResult.findings)).filter(TaskResult.job_id == job.id).all()
-    detection_results = [tr for tr in task_results if not is_post_processing_task(tr.tool_name)]
-
-    severity_counts = dict(EMPTY_SEVERITY_SUMMARY)
-    total_findings = 0
-    tools_with_hits = 0
-
-    for tr in detection_results:
-        if tr.findings:
-            tools_with_hits += 1
-        for f in tr.findings:
-            total_findings += f.count
-            sev = enum_val(f.severity)
-            severity_counts[sev] = severity_counts.get(sev, 0) + f.count
-
-    total_tools = len([tr for tr in detection_results if tr.status not in (TaskStatus.SKIPPED, TaskStatus.CANCELLED)])
-
-    job.score_ratio = f"{tools_with_hits}/{total_tools}" if total_tools else "0/0"
-    job.total_findings = total_findings
-    job.severity_summary = json_dumps(severity_counts)
 
 
 def _fail_job(db, job: AnalysisJob, message: str):
@@ -3085,8 +3054,10 @@ def _finalize_job(db, job: AnalysisJob, any_success: bool, any_failure: bool, ca
     if cancelled:
         job.status = JobStatus.CANCELLED
         job.error_message = job.error_message or CANCEL_MSG_USER
-    elif any_failure and not any_success:
+    elif not any_success:
         job.status = JobStatus.FAILED
+        if not any_failure:
+            job.error_message = "No detection tool completed successfully. Check the workflow's log types and available tool binaries."
     elif any_failure:
         job.status = JobStatus.PARTIAL
     else:

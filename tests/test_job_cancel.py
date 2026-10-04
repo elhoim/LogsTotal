@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.constants import CANCEL_MSG_DEAD_WORKER, CANCEL_MSG_USER
-from app.models import AnalysisJob, JobStatus, LogFile, LogType, TaskResult, TaskStatus, WorkflowDef
+from app.models import AnalysisJob, Finding, JobStatus, LogFile, LogType, TaskResult, TaskStatus, WorkflowDef
 from app.redis_client import CANCEL_PREFIX, HEARTBEAT_PREFIX
 
 
@@ -117,6 +117,26 @@ async def test_owner_cancels_running_job_dead_worker(user_client, regular_user, 
     assert job.error_message == CANCEL_MSG_DEAD_WORKER
     trs = (await async_db.execute(select(TaskResult).where(TaskResult.job_id == job.id))).scalars().all()
     assert all(tr.status == TaskStatus.CANCELLED for tr in trs)
+
+
+async def test_dead_worker_cancellation_preserves_finding_totals(user_client, regular_user, async_db, make_job):
+    from app.json_utils import loads
+
+    job = await make_job(status=JobStatus.RUNNING, owner_id=regular_user.id, with_running_task=True)
+    done = TaskResult(job_id=job.id, tool_name="rsigma", status=TaskStatus.COMPLETED, findings_count=1)
+    async_db.add(done)
+    await async_db.flush()
+    async_db.add(Finding(task_result_id=done.id, rule_name="Persisted detection", severity="high", count=3))
+    await async_db.commit()
+
+    response = await user_client.post(f"/jobs/{job.id}/cancel")
+
+    assert response.status_code == 303
+    await async_db.refresh(job)
+    assert job.status == JobStatus.CANCELLED
+    assert job.total_findings == 3
+    assert loads(job.severity_summary)["high"] == 3
+    assert job.score_ratio == "1/1"
 
 
 async def test_owner_cancel_running_live_worker_sets_flag_only(user_client, regular_user, fake_redis, async_db, make_job):

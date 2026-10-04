@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.constants import CANCEL_MSG_DEAD_WORKER, RECOVERY_MSG_EXPIRED
 from app.database import utc_now_naive
+from app.job_results import rollup_job_counts
 from app.models import AnalysisJob, JobStatus, TaskResult, TaskStatus
 
 #: Added to ``huey_queue_expiry`` before declaring a PENDING job expired, so the sweep
@@ -108,6 +109,9 @@ async def _recover_stale_running(db: AsyncSession, redis, *, message: str) -> in
         tr.status = TaskStatus.CANCELLED if was_cancelling else TaskStatus.FAILED
         tr.error_message = CANCEL_MSG_DEAD_WORKER if was_cancelling else message
         tr.finished_at = now
+
+    for job in stale:
+        await db.run_sync(rollup_job_counts, job)
 
     return len(stale)
 

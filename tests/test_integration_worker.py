@@ -72,6 +72,54 @@ def _make_tool_output(*, findings: list[NormalizedFinding] | None = None, error:
     )
 
 
+@pytest.mark.parametrize(
+    "tasks_yaml,expected_status,expected_task_statuses",
+    [
+        ("tasks:\n  - tool: rsigma\n    threads: 2\n", JobStatus.FAILED, [TaskStatus.FAILED]),
+        (
+            "tasks:\n  - tool: rsigma\n    threads: 2\n  - tool: hayabusa\n    tool_path: unused\n",
+            JobStatus.PARTIAL,
+            [TaskStatus.FAILED, TaskStatus.COMPLETED],
+        ),
+        ("tasks:\n  - tool: hayabusa\n    tool_path: {}\n", JobStatus.FAILED, [TaskStatus.SKIPPED]),
+        (
+            "tasks:\n  - tool: hayabusa\n    tool_path: {}\n  - tool: hayabusa\n    tool_path: unused\n",
+            JobStatus.COMPLETED,
+            [TaskStatus.SKIPPED, TaskStatus.COMPLETED],
+        ),
+    ],
+)
+def test_job_outcome_accounts_for_configuration_failures_and_skips(sync_db, worker_job, monkeypatch, tasks_yaml, expected_status, expected_task_statuses):
+    from unittest.mock import Mock
+
+    import app.workers.tasks as tasks_mod
+    from app.constants import is_post_processing_task
+    from app.routers.workflows import _validate_yaml
+    from app.tools.hayabusa import HayabusaAdapter
+
+    _validate_yaml(tasks_yaml)
+    worker_job["workflow"].tasks_yaml = tasks_yaml
+    worker_job["job"].effective_log_type = LogType.EVTX
+    sync_db.commit()
+    job_id = worker_job["job"].id
+    monkeypatch.setattr(tasks_mod, "get_sync_session", lambda: sync_db)
+    monkeypatch.setattr("app.config.settings.upload_dir", worker_job["upload_dir"])
+    monkeypatch.setattr(tasks_mod, "_HeartbeatTimer", Mock())
+    monkeypatch.setattr(tasks_mod, "_CancelWatcher", Mock(return_value=Mock(event=Mock(is_set=lambda: False))))
+    monkeypatch.setattr(tasks_mod, "_acquire_job_slot", lambda _: True)
+    monkeypatch.setattr(tasks_mod, "_release_job_slot", lambda: None)
+    # Keep adapter construction, type/architecture checks, persistence, and finalization real.
+    monkeypatch.setattr(HayabusaAdapter, "_run_local", lambda *_: _make_tool_output())
+
+    tasks_mod.run_analysis.call_local(job_id)
+
+    sync_db.expire_all()
+    job = sync_db.get(AnalysisJob, job_id)
+    results = sync_db.scalars(select(TaskResult).where(TaskResult.job_id == job_id).order_by(TaskResult.id)).all()
+    assert job.status == expected_status
+    assert [tr.status for tr in results if not is_post_processing_task(tr.tool_name)] == expected_task_statuses
+
+
 def test_run_analysis_finalizes_job(sync_db, worker_job, tmp_path, monkeypatch):
     """run_analysis should move a PENDING job to COMPLETED when the tool succeeds."""
     import app.workers.tasks as tasks_mod
