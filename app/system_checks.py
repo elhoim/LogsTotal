@@ -567,6 +567,8 @@ def check_tool_binaries(project_root: Path = PROJECT_ROOT) -> list[CheckResult]:
     `aarch64-darwin`, where ChopChopGo ships no build, `linux_syslog.yml` is guaranteed to
     produce nothing, and `summarize()` must not call that READY.
     """
+    from app.tools.catalog import TOOLS
+
     section = "Detection tools"
     results: list[CheckResult] = []
     arch = _arch_key()
@@ -579,6 +581,23 @@ def check_tool_binaries(project_root: Path = PROJECT_ROOT) -> list[CheckResult]:
         consequence = "; this workflow has no other task and will produce nothing" if blocking else "; this task will be skipped on this host"
         for task in tasks:
             tool = task.get("tool", "?")
+            spec = TOOLS.get(tool.lower())
+            if spec:
+                missing = [name for name in spec.required_files if not (project_root / "tools" / spec.name / name).is_file()]
+                if missing:
+                    results.append(
+                        CheckResult(
+                            section,
+                            level,
+                            f"{tool} ({wf_label})",
+                            "required files missing: " + ", ".join(missing),
+                            "restore the tool files from the release and restart the worker",
+                        )
+                    )
+                    continue
+                if (task.get("docker_image") or task.get("dockerfile")) and "docker" not in spec.execution_modes:
+                    results.append(CheckResult(section, level, f"{tool} ({wf_label})", "this adapter supports local binaries only", "configure tool_path for this task"))
+                    continue
             tool_path = task.get("tool_path")
             if isinstance(tool_path, dict):
                 resolved = tool_path.get(arch)

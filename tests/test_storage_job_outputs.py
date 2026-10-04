@@ -252,3 +252,60 @@ def test_both_readers_accept_the_resolved_directory():
 
     assert "job_dir" in inspect.signature(event_timeline.has_raw_output).parameters
     assert "job_dir" in inspect.signature(event_timeline.extract_all_from_raw_output).parameters
+
+
+@pytest.mark.parametrize("backend", ["local", "s3"])
+def test_rsigma_evidence_survives_storage_roundtrip(tmp_path, monkeypatch, s3_storage, backend):
+    from pathlib import Path
+
+    from app import storage
+    from app.intel.event_timeline import extract_all_from_raw_output
+    from app.intel.lineage import build_process_forest
+    from app.intel.relationships import extract_relationships
+
+    root = tmp_path / "job_42"
+    task = root / "task_4"
+    task.mkdir(parents=True)
+    event = {
+        "Event": {
+            "System": {"EventID": 1, "Computer": "PC"},
+            "EventData": {
+                "Image": r"C:\evil.exe",
+                "ProcessId": "42",
+                "ParentImage": r"C:\cmd.exe",
+                "ParentProcessId": "10",
+                "UtcTime": "2026-01-01T01:00:00Z",
+            },
+        }
+    }
+    payload = json.dumps({"rule_title": "Alert", "rule_id": "r1", "level": "high", "tags": ["attack.execution"], "event": event}) + "\n"
+    output = task / "event_rsigma.json"
+    output.write_text(payload)
+
+    if backend == "s3":
+        objects = {}
+
+        class Paginator:
+            def paginate(self, **kwargs):
+                return [{"Contents": [{"Key": k} for k in objects if k.startswith(kwargs["Prefix"])]}]
+
+        s3_storage._s3.upload_file = lambda path, bucket, key: objects.update({key: Path(path).read_bytes()})
+        s3_storage._s3.download_file = lambda bucket, key, path: Path(path).write_bytes(objects[key])
+        s3_storage._s3.get_paginator = lambda name: Paginator()
+        chosen = s3_storage
+    else:
+        chosen = storage.LocalStorage()
+    monkeypatch.setattr(storage, "get_storage", lambda: chosen)
+    chosen.sync_job_outputs_from_worker(42, root)
+    if backend == "s3":
+        assert not root.exists(), "web-tier reads must work after worker cleanup"
+    with storage.job_outputs_dir(42) as resolved:
+        assert (resolved / "task_4/event_rsigma.json").read_text() == payload
+        buckets, events = extract_all_from_raw_output(42, job_dir=resolved)
+    assert buckets == {"2026-01-01T01": {"execution": 1}}
+    assert ("cmd.exe", "executable", "evil.exe", "executable", "parent_of") in extract_relationships(events[0])
+    forest = build_process_forest(events)
+    assert forest["roots"][0]["image"] == "cmd.exe"
+    assert forest["roots"][0]["children"][0]["image"] == "evil.exe"
+    if backend == "s3":
+        assert not resolved.exists(), "downloaded evidence must be reclaimed"

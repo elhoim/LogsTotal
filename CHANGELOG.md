@@ -9,6 +9,20 @@ backup step, migration ordering, and rollback for each deployment path.
 
 ## [Unreleased]
 
+### Added
+
+- RSigma 0.23.0 in Windows Full Analysis, with native binaries, an independent Windows
+  Sigma snapshot, and mappings for EVTX, EVTX JSON and Winlogbeat. Matches retain raw
+  evidence for timelines, entities, relationships and process trees; incomplete scans fail.
+- A shared tool catalog and adapter-owned raw readers, used by runtime registration,
+  diagnostics, scaling, updates and artifact checks. See the expanded contributor checklist
+  for adding engines without changing the analytics parser.
+
+### Fixed
+
+- Timeline markers use tool and rule ID to link to the correct finding when engines
+  report rules with the same title.
+
 ## [1.0.0] — 2026-09-27
 
 The first public release. LogsTotal is a self-hosted platform for analysing security logs:

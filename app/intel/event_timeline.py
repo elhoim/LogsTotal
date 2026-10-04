@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable, Iterable, Iterator
+from itertools import islice
 from pathlib import Path
 
 from app.config import settings
@@ -26,9 +27,11 @@ from app.intel.tactics import (
     _OTHER_TACTIC,
     _OTHER_TACTIC_COLOR,
     _resolve_tactic_from_event,
+    primary_tactic_from_tags,
 )
-from app.json_utils import load_file as json_load_file
-from app.json_utils import loads as json_loads
+from app.tools.catalog import TOOLS, output_tool
+from app.tools.output import event_timestamp
+from app.tools.registry import get_adapter_class
 
 _log = logging.getLogger(__name__)
 
@@ -44,12 +47,7 @@ MAX_PARSE_EVENTS = settings.max_parse_events
 # (short-circuits on the first match) and the marker sink (labels each marker's origin).
 # Keep these in lock-step: the case-timeline coverage notice trusts the first two to agree
 # on what counts as raw output.
-_TOOL_BY_SUFFIX = {
-    "_hayabusa.json": "hayabusa",
-    "_chainsaw.json": "chainsaw",
-    "_zircolite.json": "zircolite",
-    "_chopchopgo.json": "chopchopgo",
-}
+_TOOL_BY_SUFFIX = {spec.output_suffix: spec.name for spec in TOOLS.values()}
 _OUTPUT_SUFFIXES = tuple(_TOOL_BY_SUFFIX)
 
 
@@ -79,30 +77,16 @@ def _iter_output_files(job_dir: Path) -> Iterator[Path]:
 
 def extract_timestamp(event: dict) -> str | None:
     """Extract a timestamp string from a single event dict (any tool format)."""
-    ts = event.get("Timestamp") or event.get("timestamp")
-    if ts and isinstance(ts, str) and len(ts) >= 13:
-        return ts
-
-    evtx_root = event.get("Event")
-    if isinstance(evtx_root, dict):
-        evtx_sys = evtx_root.get("System")
-        if isinstance(evtx_sys, dict):
-            tc = evtx_sys.get("TimeCreated_attributes")
-            if isinstance(tc, dict):
-                st = tc.get("SystemTime")
-                if isinstance(st, str) and len(st) >= 13:
-                    return st
-
-    return None
+    return event_timestamp(event)
 
 
-def parse_single_output_file(  # noqa: C901 — known debt: one branch per tool output shape
+def parse_single_output_file(
     output_file: Path,
     rt: dict[str, str],
     tt: dict[str, str],
     *,
     markers: MarkerAccumulator | None = None,
-    rule_meta: dict[str, tuple[str | None, str | None, int | None]] | None = None,
+    rule_meta: dict[str | tuple[str, str], tuple[str | None, str | None, int | None]] | None = None,
     consumer: Callable[[dict], None] | None = None,
     max_events: int | None = None,
 ) -> tuple[dict[str, dict[str, int]], list[dict]]:
@@ -120,7 +104,8 @@ def parse_single_output_file(  # noqa: C901 — known debt: one branch per tool 
     dicts carry no rule title at all, so by the time events reach the analytics loop the
     rule they matched is gone.
 
-    ``rule_meta`` maps ``rule_name -> (rule_id, severity, finding_id)`` and comes from
+    ``rule_meta`` maps ``(tool, rule_id or name) -> (rule_id, severity, finding_id)``
+    with legacy title fallbacks and comes from
     ``tactics._build_findings_index``, which already walks the job's findings. It is the
     canonical source for both fields: severity is not uniformly present on raw events —
     ChopChopGo emits only ``Title``, and its adapter recovers the level from the Sigma YAML
@@ -136,15 +121,15 @@ def parse_single_output_file(  # noqa: C901 — known debt: one branch per tool 
     meta = rule_meta or {}
     tool = _TOOL_BY_SUFFIX.get(next((s for s in _OUTPUT_SUFFIXES if output_file.name.lower().endswith(s)), ""), "")
 
-    def _mark(ts: str | None, tactic: str, rule_name: str, event: dict, level: object = None):
+    def _mark(ts: str | None, tactic: str, rule_name: str, event: dict, level: object = None, raw_rule_id: str = ""):
         if markers is None:
             return
         # Indexed rather than unpacked. The parse below is wrapped in a non-fatal `except
         # Exception`, so a rule_meta tuple of the wrong width would not fail the job — it
         # would abort every file's parse and leave every job with an empty index, visible
         # only as a log warning.
-        entry = meta.get(rule_name) or ()
-        rule_id = entry[0] if len(entry) > 0 else None
+        entry = meta.get((tool, raw_rule_id or rule_name)) or meta.get((tool, rule_name)) or meta.get(rule_name) or ()
+        rule_id = entry[0] if len(entry) > 0 else raw_rule_id or None
         severity = entry[1] if len(entry) > 1 else None
         finding_id = entry[2] if len(entry) > 2 else None
         markers.add(
@@ -169,96 +154,22 @@ def parse_single_output_file(  # noqa: C901 — known debt: one branch per tool 
             buckets[hour] = bkt
         bkt[tactic] = bkt.get(tactic, 0) + 1
 
-    name = output_file.name.lower()
+    spec = output_tool(output_file.name)
     try:
-        if name.endswith("_hayabusa.json"):
-            with open(output_file, "rb") as fh:
-                for line in fh:
-                    if seen >= max_events:
-                        break
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        event = json_loads(line)
-                    except (ValueError, KeyError):
-                        continue
-                    rname = event.get("RuleTitle", "")
-                    tactic = _resolve_tactic_from_event(event, rt, tt, rname)
-                    ts = extract_timestamp(event)
-                    _record(ts, tactic)
-                    _mark(ts, tactic, rname, event, event.get("Level"))
-                    seen += 1
-                    if consumer is None:
-                        events.append(event)
-                    else:
-                        consumer(event)
-
-        elif name.endswith("_chainsaw.json"):
-            with open(output_file, "rb") as fh:
-                for line in fh:
-                    if seen >= max_events:
-                        break
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        event = json_loads(line)
-                    except (ValueError, KeyError):
-                        continue
-                    rname = event.get("name", event.get("group", ""))
-                    tactic = _resolve_tactic_from_event(event, rt, tt, rname)
-                    ts = extract_timestamp(event)
-                    _record(ts, tactic)
-                    _mark(ts, tactic, rname, event, event.get("level"))
-                    seen += 1
-                    if consumer is None:
-                        events.append(event)
-                    else:
-                        consumer(event)
-
-        elif name.endswith("_chopchopgo.json"):
-            data = json_load_file(output_file)
-            if isinstance(data, list):
-                for event in data:
-                    if seen >= max_events:
-                        break
-                    if not isinstance(event, dict):
-                        continue
-                    rname = event.get("Title", "")
-                    tactic = _resolve_tactic_from_event(event, rt, tt, rname)
-                    ts = extract_timestamp(event)
-                    _record(ts, tactic)
-                    # ChopChopGo events carry no level of their own — rule_meta is the only source.
-                    _mark(ts, tactic, rname, event)
-                    seen += 1
-                    if consumer is None:
-                        events.append(event)
-                    else:
-                        consumer(event)
-
-        elif name.endswith("_zircolite.json"):
-            data = json_load_file(output_file)
-            if isinstance(data, list):
-                for rule in data:
-                    if seen >= max_events:
-                        break
-                    rname = rule.get("title", "")
-                    tactic = rt.get(rname, _OTHER_TACTIC)
-                    # The rule's own level, one level up from the matches that lose it.
-                    level = rule.get("level")
-                    for match in rule.get("matches", []):
-                        if seen >= max_events:
-                            break
-                        if isinstance(match, dict):
-                            ts = extract_timestamp(match)
-                            _record(ts, tactic)
-                            _mark(ts, tactic, rname, match, level)
-                            seen += 1
-                            if consumer is None:
-                                events.append(match)
-                            else:
-                                consumer(match)
+        if spec is None:
+            return buckets, events
+        reader = get_adapter_class(spec.name).iter_raw_matches(output_file)
+        for match in islice(reader, max(0, max_events)):
+            event = match.event
+            tactic = primary_tactic_from_tags(match.tags) or _resolve_tactic_from_event(event, rt, tt, match.rule_name)
+            ts = match.timestamp
+            _record(ts, tactic)
+            _mark(ts, tactic, match.rule_name, event, match.severity, match.rule_id)
+            seen += 1
+            if consumer is None:
+                events.append(event)
+            else:
+                consumer(event)
     except Exception:
         # Deliberately non-fatal: analytics and the timelines are best-effort views over
         # raw tool output, and a truncated or half-written file must not fail the job whose
@@ -295,7 +206,7 @@ def extract_all_from_raw_output(
     technique_tactic: dict[str, str] | None = None,
     *,
     markers: MarkerAccumulator | None = None,
-    rule_meta: dict[str, tuple[str | None, str | None, int | None]] | None = None,
+    rule_meta: dict[str | tuple[str, str], tuple[str | None, str | None, int | None]] | None = None,
     consumer: Callable[[dict], None] | None = None,
     job_dir: Path | None = None,
 ) -> tuple[dict[str, dict[str, int]], list[dict]]:

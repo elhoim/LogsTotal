@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from app.tools.base import NormalizedFinding, ToolAdapter
+from app.tools.catalog import TOOLS
+from app.tools.output import RawMatch, event_timestamp, json_records
 
 _log = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ class ZircoliteAdapter(ToolAdapter):
 
     name = "zircolite"
 
-    SUPPORTED_TYPES = {"evtx", "json_evtx", "json_winlogbeat", "xml_evtx", "auditd", "sysmon_linux", "journald"}
+    SUPPORTED_TYPES = TOOLS["zircolite"].supported_types
 
     # log_type → Zircolite input-format flag aliases; the first alias is emitted,
     # the rest are recognised for dedupe when a workflow sets them via extra_args.
@@ -152,10 +154,17 @@ class ZircoliteAdapter(ToolAdapter):
             return []
         return [aliases[0]]
 
+    @classmethod
+    def iter_raw_matches(cls, path: Path):
+        for rule in json_records(path):
+            for event in rule.get("matches", []):
+                if isinstance(event, dict):
+                    yield RawMatch(event, rule.get("title", ""), rule.get("id", ""), rule.get("level"), timestamp=event_timestamp(event))
+
     # ── subclass hooks ───────────────────────────────────────────────────
 
     def _output_filename(self, file_path: Path) -> str:
-        return f"{file_path.stem}_zircolite.json"
+        return file_path.stem + TOOLS["zircolite"].output_suffix
 
     def _config_flags(self, rules_dir: str) -> list[str]:
         """``-c <config>`` for the workflow's ``options.config``, resolved beside the rules.

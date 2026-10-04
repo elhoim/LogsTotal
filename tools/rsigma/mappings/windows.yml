@@ -1,0 +1,1086 @@
+{
+  "name": "logstotal_windows",
+  "priority": 10,
+  "transformations": [
+    {
+      "id": "category_process_creation",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:1",
+          "Microsoft-Windows-Security-Auditing:Security:4688"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "process_creation"
+        }
+      ]
+    },
+    {
+      "id": "category_file_change",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:2"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "file_change"
+        }
+      ]
+    },
+    {
+      "id": "category_network_connection",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:3"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "network_connection"
+        }
+      ]
+    },
+    {
+      "id": "category_sysmon_status",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:4",
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:16"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "sysmon_status"
+        }
+      ]
+    },
+    {
+      "id": "category_process_termination",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:5"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "process_termination"
+        }
+      ]
+    },
+    {
+      "id": "category_driver_load",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:6"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "driver_load"
+        }
+      ]
+    },
+    {
+      "id": "category_image_load",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:7"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "image_load"
+        }
+      ]
+    },
+    {
+      "id": "category_create_remote_thread",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:8"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "create_remote_thread"
+        }
+      ]
+    },
+    {
+      "id": "category_raw_access_thread",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:9"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "raw_access_thread"
+        }
+      ]
+    },
+    {
+      "id": "category_process_access",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:10"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "process_access"
+        }
+      ]
+    },
+    {
+      "id": "category_file_event",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:11"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "file_event"
+        }
+      ]
+    },
+    {
+      "id": "category_registry_event",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:12",
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:13",
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:14"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "registry_event"
+        }
+      ]
+    },
+    {
+      "id": "category_registry_add",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:12"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "registry_add"
+        }
+      ]
+    },
+    {
+      "id": "category_registry_delete",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:12"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "registry_delete"
+        }
+      ]
+    },
+    {
+      "id": "category_registry_set",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:13"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "registry_set"
+        }
+      ]
+    },
+    {
+      "id": "category_registry_rename",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:14"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "registry_rename"
+        }
+      ]
+    },
+    {
+      "id": "category_create_stream_hash",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:15"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "create_stream_hash"
+        }
+      ]
+    },
+    {
+      "id": "category_pipe_created",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:17",
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:18"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "pipe_created"
+        }
+      ]
+    },
+    {
+      "id": "category_wmi_event",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:19",
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:20",
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:21"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "wmi_event"
+        }
+      ]
+    },
+    {
+      "id": "category_dns_query",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:22"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "dns_query"
+        }
+      ]
+    },
+    {
+      "id": "category_file_delete",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:23"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "file_delete"
+        }
+      ]
+    },
+    {
+      "id": "category_clipboard_capture",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:24"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "clipboard_capture"
+        }
+      ]
+    },
+    {
+      "id": "category_process_tampering",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:25"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "process_tampering"
+        }
+      ]
+    },
+    {
+      "id": "category_file_delete_detected",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:26"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "file_delete_detected"
+        }
+      ]
+    },
+    {
+      "id": "category_file_block_executable",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:27"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "file_block_executable"
+        }
+      ]
+    },
+    {
+      "id": "category_file_block_shredding",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:28"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "file_block_shredding"
+        }
+      ]
+    },
+    {
+      "id": "category_file_executable_detected",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:29"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "file_executable_detected"
+        }
+      ]
+    },
+    {
+      "id": "category_sysmon_error",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-Sysmon:Microsoft-Windows-Sysmon/Operational:255"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "sysmon_error"
+        }
+      ]
+    },
+    {
+      "id": "category_ps_script",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-PowerShell:Microsoft-Windows-PowerShell/Operational:4104",
+          "PowerShellCore:PowerShellCore/Operational:4104"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "ps_script"
+        }
+      ]
+    },
+    {
+      "id": "category_ps_module",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "Microsoft-Windows-PowerShell:Microsoft-Windows-PowerShell/Operational:4103",
+          "PowerShellCore:PowerShellCore/Operational:4103"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "ps_module"
+        }
+      ]
+    },
+    {
+      "id": "category_ps_classic_start",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "PowerShell:Windows PowerShell:400"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "ps_classic_start"
+        }
+      ]
+    },
+    {
+      "id": "category_ps_classic_provider_start",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": [
+          "PowerShell:Windows PowerShell:600"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "category": "ps_classic_provider_start"
+        }
+      ]
+    },
+    {
+      "id": "service_security",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Security"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "security"
+        }
+      ]
+    },
+    {
+      "id": "service_system",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "System"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "system"
+        }
+      ]
+    },
+    {
+      "id": "service_application",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Application"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "application"
+        }
+      ]
+    },
+    {
+      "id": "service_sysmon",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-Sysmon/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "sysmon"
+        }
+      ]
+    },
+    {
+      "id": "service_powershell-classic",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Windows PowerShell"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "powershell-classic"
+        }
+      ]
+    },
+    {
+      "id": "service_windefend",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-Windows Defender/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "windefend"
+        }
+      ]
+    },
+    {
+      "id": "service_codeintegrity-operational",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-CodeIntegrity/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "codeintegrity-operational"
+        }
+      ]
+    },
+    {
+      "id": "service_firewall-as",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-Windows Firewall With Advanced Security/Firewall"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "firewall-as"
+        }
+      ]
+    },
+    {
+      "id": "service_bits-client",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-Bits-Client/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "bits-client"
+        }
+      ]
+    },
+    {
+      "id": "service_appxdeployment-server",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-AppXDeploymentServer/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "appxdeployment-server"
+        }
+      ]
+    },
+    {
+      "id": "service_appxpackaging-om",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-AppxPackaging/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "appxpackaging-om"
+        }
+      ]
+    },
+    {
+      "id": "service_msexchange-management",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "MSExchange Management"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "msexchange-management"
+        }
+      ]
+    },
+    {
+      "id": "service_dns-client",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-DNS Client Events/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "dns-client"
+        }
+      ]
+    },
+    {
+      "id": "service_dns-server",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "DNS Server"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "dns-server"
+        }
+      ]
+    },
+    {
+      "id": "service_iis-configuration",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-IIS-Configuration/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "iis-configuration"
+        }
+      ]
+    },
+    {
+      "id": "service_taskscheduler",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-TaskScheduler/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "taskscheduler"
+        }
+      ]
+    },
+    {
+      "id": "service_ntlm",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-NTLM/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "ntlm"
+        }
+      ]
+    },
+    {
+      "id": "service_applocker",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-AppLocker/EXE and DLL",
+          "Microsoft-Windows-AppLocker/MSI and Script",
+          "Microsoft-Windows-AppLocker/Packaged app-Deployment",
+          "Microsoft-Windows-AppLocker/Packaged app-Execution"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "applocker"
+        }
+      ]
+    },
+    {
+      "id": "service_wmi",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-WMI-Activity/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "wmi"
+        }
+      ]
+    },
+    {
+      "id": "service_security-mitigations",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-Security-Mitigations/Kernel Mode",
+          "Microsoft-Windows-Security-Mitigations/User Mode"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "security-mitigations"
+        }
+      ]
+    },
+    {
+      "id": "service_microsoft-servicebus-client",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-ServiceBus-Client"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "microsoft-servicebus-client"
+        }
+      ]
+    },
+    {
+      "id": "service_certificateservicesclient-lifecycle-system",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-CertificateServicesClient-Lifecycle-System/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "certificateservicesclient-lifecycle-system"
+        }
+      ]
+    },
+    {
+      "id": "service_capi2",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-CAPI2/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "capi2"
+        }
+      ]
+    },
+    {
+      "id": "service_ldap",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-LDAP-Client/Debug"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "ldap"
+        }
+      ]
+    },
+    {
+      "id": "service_openssh",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "OpenSSH/Operational",
+          "OpenSSH/Admin"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "openssh"
+        }
+      ]
+    },
+    {
+      "id": "service_shell-core",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-Shell-Core/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "shell-core"
+        }
+      ]
+    },
+    {
+      "id": "service_terminalservices-localsessionmanager",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "terminalservices-localsessionmanager"
+        }
+      ]
+    },
+    {
+      "id": "service_appmodel-runtime",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-AppModel-Runtime/Admin"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "appmodel-runtime"
+        }
+      ]
+    },
+    {
+      "id": "service_driver-framework",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-DriverFrameworks-UserMode/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "driver-framework"
+        }
+      ]
+    },
+    {
+      "id": "service_lsa-server",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-LSA/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "lsa-server"
+        }
+      ]
+    },
+    {
+      "id": "service_diagnosis-scripted",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-Diagnosis-Scripted/Operational"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "diagnosis-scripted"
+        }
+      ]
+    },
+    {
+      "id": "service_smbclient-security",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-SMBClient/Security"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "smbclient-security"
+        }
+      ]
+    },
+    {
+      "id": "service_smbserver-connectivity",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_channel": [
+          "Microsoft-Windows-SMBServer/Connectivity"
+        ]
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "product": "windows",
+          "service": "smbserver-connectivity"
+        }
+      ]
+    },
+    {
+      "id": "unavailable_file_access",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": "unsupported:file_access"
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "category": "file_access"
+        }
+      ]
+    },
+    {
+      "id": "unavailable_file_rename",
+      "type": "add_condition",
+      "conditions": {
+        "_logstotal_source": "unsupported:file_rename"
+      },
+      "rule_conditions": [
+        {
+          "type": "logsource",
+          "category": "file_rename"
+        }
+      ]
+    }
+  ]
+}

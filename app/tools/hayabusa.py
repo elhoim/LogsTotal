@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from app.tools.base import NormalizedFinding, ToolAdapter
+from app.tools.catalog import TOOLS
+from app.tools.output import RawMatch, event_timestamp, json_records
 
 _log = logging.getLogger(__name__)
 
@@ -42,12 +44,17 @@ class HayabusaAdapter(ToolAdapter):
 
     name = "hayabusa"
 
-    SUPPORTED_TYPES = {"evtx"}
+    SUPPORTED_TYPES = TOOLS["hayabusa"].supported_types
+
+    @classmethod
+    def iter_raw_matches(cls, path: Path):
+        for event in json_records(path, jsonl=True):
+            yield RawMatch(event, event.get("RuleTitle", ""), event.get("RuleID", ""), event.get("Level"), timestamp=event_timestamp(event))
 
     # ── subclass hooks ───────────────────────────────────────────────────
 
     def _output_filename(self, file_path: Path) -> str:
-        return f"{file_path.stem}_hayabusa.json"
+        return file_path.stem + TOOLS["hayabusa"].output_suffix
 
     def _core_args(
         self,

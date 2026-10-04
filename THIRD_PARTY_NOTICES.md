@@ -21,6 +21,7 @@ Each tool's upstream licence text is committed alongside its binaries in
 | **Chainsaw** | 2.16.5 | GPL-3.0-only | <https://github.com/WithSecureOpenSource/chainsaw> |
 | **Hayabusa** | 4.1.0 | AGPL-3.0-only | <https://github.com/Yamato-Security/hayabusa> |
 | **ChopChopGo** | 1.1.0 | GPL-3.0-only | <https://github.com/M00NLIG7/ChopChopGo> |
+| **RSigma** | 0.23.0 | MIT | <https://github.com/timescale/rsigma/tree/v0.23.0> |
 | **Zircolite** | 4.0.0, image `wagga40/zircolite` | LGPL-3.0-only | <https://github.com/wagga40/Zircolite> |
 | **Tailwind CSS CLI** (standalone, build-time only) | 3.4.17 | MIT | <https://github.com/tailwindlabs/tailwindcss> |
 
@@ -53,7 +54,7 @@ itself does not contain them.
 
 | Component | Location | Licence | Upstream |
 |---|---|---|---|
-| SigmaHQ rules (Windows + Linux subsets) | `tools/chainsaw/sigma/`, `tools/chopchopgo/rules/`, `tools/hayabusa/rules/`, `tools/zircolite/rules/` | Detection Rule License 1.1 (DRL 1.1) | <https://github.com/SigmaHQ/sigma> |
+| SigmaHQ rules (Windows + Linux subsets) | `tools/chainsaw/sigma/`, `tools/chopchopgo/rules/`, `tools/hayabusa/rules/`, `tools/zircolite/rules/`, `tools/rsigma/rules/` | Detection Rule License 1.1 (DRL 1.1) | <https://github.com/SigmaHQ/sigma> |
 | Chainsaw rules + EVTX mappings | `tools/chainsaw/rules/`, `tools/chainsaw/mappings/` | GPL-3.0-only | <https://github.com/WithSecureOpenSource/chainsaw> |
 | Hayabusa rules + config | `tools/hayabusa/rules/` | Detection Rule License 1.1 (DRL 1.1) | <https://github.com/Yamato-Security/hayabusa-rules> |
 | ChopChopGo mappings | `tools/chopchopgo/mappings/` | GPL-3.0-only | <https://github.com/M00NLIG7/ChopChopGo> |

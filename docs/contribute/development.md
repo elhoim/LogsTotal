@@ -71,7 +71,40 @@ Never hand-edit `requirements.txt` — any edit you make will be overwritten the
 
 ## Adding a tool adapter
 
-Subclass `ToolAdapter` in `app/tools/mytool.py` — implement `_output_filename()`, `normalize() -> list[NormalizedFinding]`, and `_build_local_cmd()` (the base class handles execution, timing, and output loading); add `_docker_tool_args()` for Docker support, and optionally set `SUPPORTED_TYPES` to restrict by log type. Register it in `app/tools/registry.py` (`_REGISTRY`), then reference it by name in a workflow YAML (`tool: mytool`).
+The integration contract has two parts: a `ToolSpec` in `app/tools/catalog.py`, and a
+`ToolAdapter` subclass in `app/tools/mytool.py`. The catalog is standard-library-only so
+the updater and scaling commands also work before the application environment exists.
+
+1. Declare the adapter import path, supported log types and execution modes, unique raw
+   output suffix, thread capability, upstream repositories, release assets and required
+   runtime files in the catalog. The registry loads the adapter lazily. Diagnostics,
+   scaling, updates and release artifact checks consume the same entry.
+2. Implement `_output_filename()`, `_build_local_cmd()` and
+   `normalize() -> list[NormalizedFinding]`. Add `_docker_tool_args()` only when supported.
+   Reuse the base process runner for timeout, cancellation and process-group cleanup.
+   For engines that emit detections on stdout, `_exec(stdout_path=...)` writes directly to
+   disk. Validate completion before publishing the final raw output file; a parse error
+   must not become a successful scan with zero matches.
+3. Implement the class method `iter_raw_matches(path)`, yielding `RawMatch` records from
+   `app/tools/output.py`. Include the event, rule ID, title, severity, tags and timestamp;
+   retain original event fields alongside any analytics aliases. This connects the tool
+   to timeline markers, entities, relationships and process trees without engine-specific
+   branches in `event_timeline.py`. Counts must include every match even when finding
+   details are capped. Keep JSONL readers streaming.
+4. Add the tool's staging recipe to `scripts/detection_tools.py` when its rule layout needs
+   one. Stage binaries, rules and mappings together, preserve licenses, record checksums
+   and provenance in `tools/<tool>/upstream.json`, and validate release compatibility.
+   RSigma's pre-1.0 minor-version guard is an example of a stricter compatibility policy.
+5. Add a workflow task with architecture-specific paths, update the tool runbook and
+   `THIRD_PARTY_NOTICES.md`, and test named detections against real samples. Use
+   `tests/test_tool_contract.py` for the shared contract and `tests/test_rsigma.py` for
+   strict parsing, logsource boundaries, field aliases and raw-evidence tests. Verify the
+   storage round trip, caps, cancellation and failure paths as well as successful matches.
+
+Run `./logstotal check`, `./logstotal test`, and the affected sample workflows. For vendored
+tools, run `./logstotal ci:artifacts` to exercise both release formats. Avoid adding a plugin
+framework or a new database field for a tool that fits this contract; keep conversion and
+upstream-specific behavior inside its adapter and update recipe.
 
 ## Deleting rows in the async path
 

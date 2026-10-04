@@ -24,20 +24,12 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-REPOS = {
-    "chainsaw": "WithSecureOpenSource/chainsaw",
-    "hayabusa": "Yamato-Security/hayabusa",
-    "chopchopgo": "M00NLIG7/ChopChopGo",
-    "zircolite": "wagga40/Zircolite",
-}
-RULE_REPOS = {
-    "chainsaw": "SigmaHQ/sigma",
-    "hayabusa": "Yamato-Security/hayabusa-rules",
-    "chopchopgo": "SigmaHQ/sigma",
-    # Zircolite-Rules has no merged Windows bundle; its Linux bundle uses legacy
-    # FTS. The engine repository carries the current pySigma-compiled bundles.
-    "zircolite": "wagga40/Zircolite",
-}
+# This script also runs before PDM is installed. The catalog has no app imports.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from app.tools.catalog import TOOLS
+
+REPOS = {name: spec.repo for name, spec in TOOLS.items()}
+RULE_REPOS = {name: spec.rule_repo for name, spec in TOOLS.items()}
 MANIFEST = "upstream.json"
 
 # What Chainsaw keeps of a SigmaHQ snapshot: the curated rule directories and the licence
@@ -136,34 +128,8 @@ def extract(archive: Path, destination: Path) -> None:
 
 
 def asset_map(tool: str, tag: str) -> list[tuple[str, str, str]]:
-    version = tag.removeprefix("v")
-    if tool == "chainsaw":
-        return [
-            (f"chainsaw_{arch}.{extension}", name, "chainsaw")
-            for arch, extension, name in (
-                ("x86_64-unknown-linux-gnu", "tar.gz", "chainsaw-intel-lin"),
-                ("aarch64-unknown-linux-gnu", "tar.gz", "chainsaw-arm-lin"),
-                ("aarch64-apple-darwin", "zip", "chainsaw-mac"),
-            )
-        ]
-    if tool == "hayabusa":
-        return [
-            (f"hayabusa-{version}-{arch}.zip", name, f"hayabusa-{version}-{arch}")
-            for arch, name in (
-                ("lin-x64-gnu", "hayabusa-intel-lin"),
-                ("lin-aarch64-gnu", "hayabusa-arm-lin"),
-                ("mac-aarch64", "hayabusa-mac"),
-            )
-        ]
-    if tool == "chopchopgo":
-        return [
-            (f"ChopChopGo-{tag}-linux-{arch}.zip", name, "ChopChopGo")
-            for arch, name in (
-                ("amd64", "chopchopgo-intel-lin"),
-                ("arm64", "chopchopgo-arm-lin"),
-            )
-        ]
-    return []
+    values = {"tag": tag, "version": tag.removeprefix("v")}
+    return [(asset.archive.format(**values), asset.installed, asset.executable.format(**values)) for asset in TOOLS[tool].assets]
 
 
 def validate_binary(path: Path, name: str) -> None:
@@ -205,8 +171,8 @@ def local_version(root: Path, tool: str) -> str:
             return data.get("version", "")
         raise ValueError(f"{tool}: installed binaries differ from {MANIFEST}")
     binary = host_binary(directory, tool)
-    if binary and tool != "chopchopgo":
-        proc = subprocess.run([str(binary.resolve()), "--version" if tool == "chainsaw" else "help"], capture_output=True, text=True, timeout=30, check=False)
+    if binary and TOOLS[tool].version_args:
+        proc = subprocess.run([str(binary.resolve()), *TOOLS[tool].version_args], capture_output=True, text=True, timeout=30, check=False)
         if match := re.search(r"\bv?(\d+\.\d+\.\d+)\b", proc.stdout):
             return match[1]
     return ""
@@ -274,6 +240,27 @@ def stage_binaries(tool: str, release: dict, stage: Path, work: Path) -> dict:
     return hashes
 
 
+def rsigma_rules(source: Path, stage: Path) -> None:
+    """Vendor independent Windows rules and the LogsTotal-owned matching pipeline."""
+    from app.tools.rsigma_windows import EXCLUDED_CATEGORIES, windows_pipeline
+
+    rules = stage / "rules"
+    if rules.exists():
+        shutil.rmtree(rules)
+    rules.mkdir()
+    for name in ("rules", "rules-emerging-threats", "rules-threat-hunting"):
+        directory = source / name / "windows"
+        if directory.is_dir():
+            shutil.copytree(directory, rules / name / "windows", ignore=lambda _path, names: [n for n in names if n in EXCLUDED_CATEGORIES or n == ".git"])
+    if not any(rules.rglob("*.yml")):
+        raise ValueError("RSigma Windows rule snapshot is empty")
+    shutil.copyfile(source / "LICENSE", stage / "LICENSE-SigmaHQ")
+    (stage / "mappings").mkdir(exist_ok=True)
+    (stage / "config").mkdir(exist_ok=True)
+    write_json(stage / "mappings" / "windows.yml", windows_pipeline())
+    write_json(stage / "config" / "rsigma.yml", {"version": 1})
+
+
 def stage_rules(tool: str, release: dict, stage: Path, work: Path) -> dict:
     repo = RULE_REPOS[tool]
     commit = api(f"{repo}/commits/HEAD")
@@ -288,6 +275,8 @@ def stage_rules(tool: str, release: dict, stage: Path, work: Path) -> dict:
             replace_tree(source / name, stage / "rules" / name)
     elif tool == "chopchopgo":
         replace_tree(source / "rules" / "linux", stage / "rules")
+    elif tool == "rsigma":
+        rsigma_rules(source, stage)
     else:
         for name in ("rules_windows_merged.json", "rules_linux.json"):
             rules = read_json(source / "rules" / name)
@@ -325,12 +314,17 @@ def version_tuple(value: str) -> tuple[int, ...]:
     return tuple(map(int, match.groups()))
 
 
+def breaking_update(tool: str, have: str, want: str) -> bool:
+    old, new = version_tuple(have), version_tuple(want)
+    return old[0] != new[0] or (TOOLS[tool].minor_is_breaking and old[0] == 0 and old[:2] != new[:2])
+
+
 def update(root: Path, tool: str, allow_major: bool) -> None:
     release = api(f"{REPOS[tool]}/releases/latest")
     have, want = local_version(root, tool), release["tag_name"]
     if have and version_tuple(have) > version_tuple(want):
         raise ValueError(f"refusing to downgrade {tool}: {have} -> {want}")
-    if (not have or version_tuple(have)[0] != version_tuple(want)[0]) and not allow_major:
+    if (not have or breaking_update(tool, have, want)) and not allow_major:
         raise ValueError(f"{tool}: {have or 'unknown'} -> {want}; validate the adapter, then pass --allow-major")
     print(f"{tool}: {have or '?'} -> {want}", flush=True)
     with tempfile.TemporaryDirectory(prefix=f".{tool}-", dir=root / "tools") as temporary:
@@ -361,8 +355,8 @@ def check(root: Path, targets: list[str], strict: bool) -> int:
                 status = "current"
             elif version_tuple(have) > version_tuple(want):
                 status = "newer than latest release"
-            elif version_tuple(have)[0] != version_tuple(want)[0]:
-                status = "BREAKING — major version change; validate the adapter"
+            elif breaking_update(tool, have, want):
+                status = "BREAKING — incompatible version change; validate the adapter"
             else:
                 status = "update available"
             print(f"{tool:12} {have or '?':12} {want:12} {status}")
@@ -394,7 +388,7 @@ def check(root: Path, targets: list[str], strict: bool) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("check", "update"), nargs="?", default="check")
+    parser.add_argument("action", choices=("check", "update", "artifacts"), nargs="?", default="check")
     parser.add_argument("tools", nargs="*")
     parser.add_argument("--strict", action="store_true", default=os.environ.get("TOOLS_STRICT") == "1")
     parser.add_argument("--allow-major", action="store_true", default=os.environ.get("TOOLS_ALLOW_MAJOR") == "1")
@@ -405,6 +399,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("name at least one tool: ./logstotal tools:update -- chainsaw")
     root = Path.cwd()
     try:
+        if args.action == "artifacts":
+            for tool in args.tools or TOOLS:
+                spec = TOOLS[tool]
+                base = Path("tools") / tool
+                manifest = read_json(root / base / MANIFEST)
+                paths = [MANIFEST, "LICENSE", *spec.required_files, *(asset.installed for asset in spec.assets), *manifest["rules"]["trees"]]
+                for path in dict.fromkeys(paths):
+                    print((base / path).as_posix())
+            return 0
         if args.action == "check":
             return check(root, args.tools or list(REPOS), args.strict)
         for tool in dict.fromkeys(args.tools):
