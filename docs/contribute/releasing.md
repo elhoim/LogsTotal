@@ -28,6 +28,22 @@ uploads `logstotal-X.Y.Z.7z` when the tag reaches GitHub, and its mirror,
 re-verify the tag against all three declared versions before building, and both can be
 re-run by hand against an existing tag.
 
+To read a GitHub release before it is announced, create it as a draft. A tag push always
+publishes, and GitHub notifies watchers on publish, so a release turned back into a draft
+afterwards has already been announced. Hold the workflow back for the push, then run it by
+hand with `draft`:
+
+```bash
+gh workflow disable release.yml
+git push --atomic <github-remote> <branch> refs/tags/vX.Y.Z
+gh workflow enable release.yml
+gh workflow run release.yml --ref <branch> -f tag=vX.Y.Z -f draft=true
+gh release edit vX.Y.Z --draft=false    # later, to publish
+```
+
+The draft carries the same CI-built archive and checksum. `upgrade` does not offer it until
+it is published, because a draft's assets are not publicly downloadable.
+
 `release:finish` commits, then tags, then runs `./logstotal check && ./logstotal test`. That order is the
 point of the command. The tag has to land **on** the release commit, and the suite has to
 run **with** the tag in place, because `test_the_declared_version_has_a_git_tag` cannot pass

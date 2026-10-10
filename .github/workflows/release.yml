@@ -12,6 +12,12 @@ on:
       tag:
         description: "Tag to build (must already exist)"
         required: true
+      draft:
+        # A tag push always publishes. A draft is how a release gets read before it is
+        # announced: GitHub notifies watchers on publish, so un-publishing afterwards is too late.
+        description: "Create the release as a draft, to publish by hand"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -118,6 +124,7 @@ jobs:
         uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda
         with:
           tag_name: ${{ inputs.tag || github.ref_name }}
+          draft: ${{ inputs.draft == true }}
           # The CHANGELOG is the release notes; generate_release_notes appends the commit
           # list underneath for anyone who wants it. Without body_path the notes would be
           # the raw commit list and nothing else.
