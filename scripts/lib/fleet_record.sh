@@ -239,7 +239,11 @@ fleet_hosts() {
   if [ -n "${FLEET_MANIFEST:-}" ]; then
     _fleet_py --file "$path" hosts
   else
-    _fleet_py --file "$path" hosts --as-control-plane
+    # This machine's own record. One that fails validation degrades to "I know nothing", as
+    # the header promises, and says so: the callers assign this under `set -e`, so a bare
+    # failure stopped deploy, upgrade and preflight with no message at all.
+    _fleet_py --file "$path" hosts --as-control-plane && return 0
+    warn "ignoring the fleet record at ${path}: it did not validate (check it with: python3 scripts/fleet_manifest.py --file ${path} validate)"
   fi
 }
 

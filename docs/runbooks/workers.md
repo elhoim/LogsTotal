@@ -96,8 +96,8 @@ Recovery changes only the job's status. The uploaded file stays in storage, so t
 ### When jobs keep getting stuck
 
 1. **Is the worker running?** `docker compose ps worker`, or `/admin/workers`.
-2. **Is Redis up?** `docker compose exec redis redis-cli ping` should answer `PONG`. With `REDIS_PASSWORD` set, run `docker compose exec redis sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping'` instead.
-3. **Is the heartbeat key there while a job runs?** Add the same `-a` option as above if Redis has a password: `docker compose exec redis redis-cli --scan --pattern 'logstotal:heartbeat:*'`.
+2. **Is Redis up?** `docker compose exec redis redis-cli ping` should answer `PONG`. With `REDIS_PASSWORD` set, run `docker compose exec redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping'` instead — through the environment, not `-a`, which would put the password in the host's process list.
+3. **Is the heartbeat key there while a job runs?** Use the same `REDISCLI_AUTH` form as above if Redis has a password: `docker compose exec redis redis-cli --scan --pattern 'logstotal:heartbeat:*'`.
 4. **Does the worker log show errors?** `docker compose logs --tail 100 worker` (on a worker host: `docker compose -f docker-compose.worker.yml logs --tail 100 worker`).
 5. **Is the worker host overloaded?** A heavily loaded host can miss refreshes for longer than 60 seconds. Raise `WORKER_HEARTBEAT_TTL` to 120.
 

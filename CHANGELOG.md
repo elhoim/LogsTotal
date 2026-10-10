@@ -9,6 +9,95 @@ backup step, migration ordering, and rollback for each deployment path.
 
 ## [Unreleased]
 
+A security release. It fixes the nineteen vulnerabilities reported privately against 1.0.0,
+listed under **Security**, and adds the RSigma engine and an account menu. Read **Upgrade
+notes** before upgrading: everyone is signed out once, and two API behaviours change.
+
+### Upgrade notes
+
+- **Everyone is signed out once.** Browser sessions are now bound to the account's password,
+  and cookies issued by 1.0.0 carry no binding. API tokens are unaffected.
+- **`PATCH /api/users/me` requires `current_password`** to change the password or the email.
+  Updates that change neither are unaffected.
+- **`GET /api/v1/jobs` shows a failed job's error detail to administrators only.** Other
+  callers, the submitter included, get a generic message, as on the job page.
+- **Login refuses a mismatched `Origin` or `Referer`.** A reverse proxy that rewrites `Host`
+  without rewriting `Origin` now breaks login too, not only authenticated writes — see
+  [CSRF protection](docs/security.md#csrf-protection).
+- **Tighten the secret files 1.0.0 wrote.** New and regenerated `.env`, `deploy-envs/*` and
+  per-host env files are created owner-only, but existing ones keep their mode until
+  something rewrites them. Run `chmod 600 .env deploy-envs/*` where they exist, and on each
+  host's installed `.env`. Rotate the secrets if other local users could read them.
+- **A fleet record adopted with `FLEET_FROM` or `fleet:pull` is validated** and refused if it
+  carries shell syntax, names `local` when it did not come from `local`, or gives an install
+  path that is not a plain absolute path.
+- **`deploy:smoke` with internal or custom TLS and basic auth** no longer sends the password
+  over an unverified certificate. Install the CA on the machine running it or set
+  `SMOKE_CACERT`; otherwise the authenticated checks are skipped.
+- **`db:to-postgres` reads its target from `POSTGRES_TARGET_URL`.** `--postgres-url` still
+  works for a URL without a password.
+- **The `.env` administrator is created only while the instance has none.** Changing
+  `ADMIN_EMAIL` no longer adds an administrator at the next start; use the
+  [lockout-recovery](docs/runbooks/account-recovery.md#lockout-recovery) command.
+- **Behavioural heuristics may report themselves incomplete**, with an amber note on the
+  Threat Detection card, when crafted input exhausts their time limit. Sigma findings are
+  unaffected.
+
+### Security
+
+All nineteen advisories were reported by @elhoim through private vulnerability reporting.
+
+- GHSA-49jf-3jjc-cxjc (high): a fleet record adopted from another machine could inject
+  shell commands on the operator's workstation. Records are validated, and only
+  allow-listed, shell-safe options are imported.
+- GHSA-gvh8-rjm3-x6rh (high): `deploy:start` and `docker:up` ran the offline-bundle marker,
+  which the web container can write, as shell code as root. It is parsed as data.
+- GHSA-vrm5-j754-mrr8 (high): generated `.env` and fleet secret files were world-readable,
+  or made private only after the secrets were written. They are created owner-only and
+  replaced atomically.
+- GHSA-gh9q-rj4w-gmm4 (high): polynomial backtracking in the shipped threat-detection
+  patterns let a crafted upload stall a worker. Each match has a 20 ms timeout, inside a
+  per-analysis budget that grows with the events checked and stops at 120 s.
+- GHSA-p777-46h6-j6fc (medium): sessions stayed valid for up to 24 hours after a password
+  change or an administrator reset. They are now revoked.
+- GHSA-jxjh-wvj9-wcjp (medium): `PATCH /api/users/me` changed the password and email
+  without the current password.
+- GHSA-9xfh-hmrh-4pr2 (medium): deploy scripts staged secrets and release archives, and
+  placed the SSH control socket, at predictable `/tmp` paths. They use private temporary
+  directories, and the control socket only a directory the operator owns.
+- GHSA-4f3q-g376-hcgf (low): a hostile page could sign a visitor into another account
+  (login CSRF).
+- GHSA-3gjr-wr8j-9vr4 (low): the outbound guard blocked only `169.254.169.254`. Webhooks, AI
+  providers, rule-list feeds and live enrichment share one block list covering the other
+  cloud metadata endpoints, whatever `*_REQUIRE_PUBLIC_HOST` is set to.
+- GHSA-ccp7-crq7-4h9j (low): a Mermaid `init` directive in a note or comment could restyle
+  a diagram to cover the whole page for other users.
+- GHSA-8x85-vh2h-6r24 (low): log values containing line breaks could forge the structure
+  of an AI job brief. Sample events are single-line JSON.
+- GHSA-xfr9-gp6v-wj78 (low): `GET /api/v1/jobs` returned raw worker errors to anonymous
+  callers.
+- GHSA-5cwm-4ph5-hrjw (low): a rule list's feed URL, where an API key may live, and its
+  fetch error were shown to every member.
+- GHSA-6v2g-qcqc-9h6f (low): the graph's near-clique count included private jobs.
+- GHSA-f2wg-286c-56g4 (low): the AI pane named the account that started a run to anonymous
+  visitors of a public job.
+- GHSA-p4h8-5mhf-8rgv (low): the process-tree and events-timeline endpoints ignored the
+  site switches that hide those panels.
+- GHSA-6gfg-mgvp-qgx2 (low): `deploy:smoke` sent basic-auth credentials with TLS
+  verification turned off.
+- GHSA-ffqv-xfpg-6fq9 (low): backup, restore and the deploy configuration review put
+  database and basic-auth passwords on process command lines.
+- GHSA-qqmc-jwjj-87c9 (low): `test:pg` published a PostgreSQL superuser on every interface,
+  and `db:to-postgres` took the password on its command line.
+
+Also fixed:
+
+- An administrator's re-run of another user's private file created a public job, readable
+  by anonymous visitors (#8, @elhoim).
+- The Compose Redis healthcheck put `REDIS_PASSWORD` on a command line every five seconds.
+- An administrator who changed their email address got a second administrator, with the
+  `.env` password, at the next start.
+
 ### Added
 
 - RSigma 0.23.0 in Windows Full Analysis, with native binaries, an independent Windows
@@ -21,11 +110,32 @@ backup step, migration ordering, and rollback for each deployment path.
   compatibility policies preserving existing counts, samples, timelines and analytics.
 - Optional workflow profiles for shared tool paths, rules and pinned container images.
   Existing explicit workflow tasks retain their behavior and can override profile defaults.
+- An account menu under your email address in the navigation: change your own email or
+  password, both of which require the current password, and log out.
 
 ### Fixed
 
 - Timeline markers use tool and rule ID to link to the correct finding when engines
   report rules with the same title.
+- A job or tool result finalised by one process (a cancel, the recovery sweep, a failed
+  enqueue) is no longer overwritten by another, and a duplicate queue message no longer
+  deletes the running worker's heartbeat or cancel flag (#4, #9, @elhoim).
+- A job where no detection engine succeeded is marked failed with a reason, instead of
+  completed with no findings. A crashed container run is reported failed even when it left
+  partial output, and cancelled or recovered jobs keep correct finding totals.
+- Watching a job: losing an insert race no longer loses the comment, tag or AI run that
+  raised the event (#7, @elhoim).
+- Upload retention ages a file by its newest job, so a re-upload or a resubmit no longer
+  takes the new job with it (#6, @elhoim).
+- A fleet deployed with an IPv6 control-plane address writes a fleet record that its own
+  tooling accepts. An invalid record on the control plane is ignored with a warning
+  instead of stopping deploy and upgrade without a message.
+
+### Documentation
+
+- The security model states that the entity list is instance-wide: private jobs hide the
+  job, not the observables extracted from it (#5, @elhoim).
+- The `show_entities` and timeline settings describe what they actually hide.
 
 ## [1.0.0] — 2026-09-27
 

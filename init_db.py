@@ -36,7 +36,12 @@ def _pause_before_container_exit(seconds: int = 30) -> None:
     time.sleep(seconds)
 
 
-async def main():
+async def main(*, recovery: bool = False):
+    """Load workflows and shared rules, then create the ``.env`` administrator if needed.
+
+    The administrator is created only while the instance has none. ``recovery=True`` is the
+    lockout-recovery runbook's way past that, and still never touches an existing account.
+    """
     from fastapi_users.exceptions import UserAlreadyExists
     from sqlalchemy import select
 
@@ -91,6 +96,12 @@ async def main():
         existing_admin = await session.scalar(select(User).where(User.email == admin_email))
         if existing_admin is not None:
             print(f"\nAdmin user {admin_email} already exists — skipping.")
+            return
+        # ADMIN_EMAIL bootstraps the first administrator and is history after that. Matching
+        # on it alone meant an admin who changed their address in the account menu got a
+        # second superuser, with the .env password, on the next container start.
+        if not recovery and await session.scalar(select(User.id).where(User.is_superuser.is_(True)).limit(1)) is not None:
+            print(f"\nAn administrator already exists — not creating {admin_email}.")
             return
 
         user_db = SQLAlchemyUserDatabase(session, User)

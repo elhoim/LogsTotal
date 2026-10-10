@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload, undefer
@@ -1455,13 +1455,21 @@ async def job_resubmit(
             log_file.log_type = effective_type
     _require_workflow_supports(workflow, effective_type, "chosen")
 
+    if source is not None:
+        is_private = bool(source.is_private)
+    else:
+        # Only an admin gets here without a job of their own on the file. Taking the public
+        # default would publish the findings of a file that was only ever submitted
+        # privately; the re-run is public only if the file already has a public job.
+        is_private = await db.scalar(select(AnalysisJob.id).where(AnalysisJob.file_id == log_file.id, AnalysisJob.is_private == False).limit(1)) is None  # noqa: E712
+
     client_ip = get_client_ip(request)
     job = AJ(
         file_id=log_file.id,
         workflow_id=workflow_id,
         submitted_by_user_id=user.id if user else None,
         submitter_ip=client_ip,
-        is_private=bool(source and source.is_private),
+        is_private=is_private,
         submitted_filename=source.submitted_filename if source else None,
         effective_log_type=effective_type,
     )
@@ -1475,9 +1483,17 @@ async def job_resubmit(
         # polling PENDING until `HUEY_QUEUE_EXPIRY` sweeps it. Same treatment as /upload:
         # fail it here, where the reason is still known.
         logger.exception("Could not enqueue analysis for job %s", job.id)
-        job.status = JobStatus.FAILED
-        job.error_message = "The analysis could not be queued: the task queue was unreachable. Resubmit once it is back."
-        job.finished_at = utc_now_naive()
+        # Only while still PENDING: an enqueue can raise after the message landed, and a
+        # worker may already have claimed the job.
+        await db.execute(
+            update(AnalysisJob)
+            .where(AnalysisJob.id == job.id, AnalysisJob.status == JobStatus.PENDING)
+            .values(
+                status=JobStatus.FAILED,
+                error_message="The analysis could not be queued: the task queue was unreachable. Resubmit once it is back.",
+                finished_at=utc_now_naive(),
+            )
+        )
         await db.commit()
         raise HTTPException(503, "The analysis queue is unreachable, so this file cannot be analysed right now. Try again shortly.") from None
     # Resubmit takes a file id, not a job id — the new job is the only id in scope here.
@@ -1540,20 +1556,21 @@ async def job_cancel(
         # A RUNNING job with a live heartbeat converges via the flag within
         # seconds (its worker persists tool results and the terminal status).
         message = CANCEL_MSG_USER if status == "pending" else CANCEL_MSG_DEAD_WORKER
-        job.status = JobStatus.CANCELLED
-        job.error_message = message
-        job.finished_at = utc_now_naive()
-        tr_result = await db.execute(
-            select(TaskResult).where(
-                TaskResult.job_id == job_id,
-                TaskResult.status.in_([TaskStatus.PENDING, TaskStatus.RUNNING]),
-            )
+        # Conditional: the status read above is a snapshot. A job that finished meanwhile
+        # keeps its result, and a worker that claims it after this commit sees CANCELLED.
+        result = await db.execute(
+            update(AnalysisJob)
+            .where(AnalysisJob.id == job_id, AnalysisJob.status.in_([JobStatus.PENDING, JobStatus.RUNNING]))
+            .values(status=JobStatus.CANCELLED, error_message=message, finished_at=utc_now_naive())
         )
-        for tr in tr_result.scalars().all():
-            tr.status = TaskStatus.CANCELLED
-            tr.error_message = message
-            tr.finished_at = utc_now_naive()
-        await db.run_sync(rollup_job_counts, job)
+        if result.rowcount == 1:
+            # Conditional too: a worker that is still alive may commit a tool's result meanwhile.
+            await db.execute(
+                update(TaskResult)
+                .where(TaskResult.job_id == job_id, TaskResult.status.in_([TaskStatus.PENDING, TaskStatus.RUNNING]))
+                .values(status=TaskStatus.CANCELLED, error_message=message, finished_at=utc_now_naive())
+            )
+            await db.run_sync(rollup_job_counts, job)
         await db.commit()
 
     await activity.record("job.cancel", request=request, user=user, target_type="job", target_id=str(job_id))

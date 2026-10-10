@@ -87,3 +87,13 @@ def test_env_install_is_private_atomic_and_cleans_up(tmp_path, failure):
         assert target.stat().st_mode & 0o777 == 0o600
     assert list(remote_tmp.iterdir()) == []
     assert [p.name for p in dest.iterdir()] == [".env"]
+
+
+def test_no_redis_password_reaches_a_redis_cli_command_line():
+    """`redis-cli -a` leaves the password in the host's process list, and the Compose
+    healthcheck ran it every five seconds. redis-cli reads REDISCLI_AUTH instead."""
+    sites = [ROOT / "docker-compose.yml", ROOT / "docs/runbooks/workers.md", ROOT / "docs/troubleshooting.md"]
+    for path in sites:
+        text = path.read_text(encoding="utf-8")
+        assert "redis-cli -a" not in text, path
+        assert "REDISCLI_AUTH=" in text, path

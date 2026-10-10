@@ -359,6 +359,9 @@ def test_regex_work_is_bounded_across_events_and_other_checks_continue(monkeypat
     import app.threat_detection as td
 
     monkeypatch.setattr(td, "REGEX_TOTAL_SECONDS", 0.06)
+    # The fixed budget alone; the per-event allowance has its own tests below.
+    monkeypatch.setattr(td, "REGEX_EVENT_SECONDS", 0.0)
+    monkeypatch.setattr(td, "REGEX_KB_SECONDS", 0.0)
     monkeypatch.setattr(
         td,
         "_cached",
@@ -389,3 +392,87 @@ def test_regex_work_is_bounded_across_events_and_other_checks_continue(monkeypat
     fresh.add([{"CommandLine": "aaa"}])
     assert not fresh.result().get("incomplete")
     assert fresh.result()["total_indicators"] == 1
+
+
+def _slow_and_lsass_config(td):
+    return td._compile_config(
+        {
+            "categories": {
+                "test": {
+                    "label": "Test",
+                    "checks": [
+                        {
+                            "type": "regex",
+                            "fields": ["CommandLine"],
+                            "patterns": [
+                                {"name": "slow", "pattern": "(a+)+$"},
+                                {"name": "lsass_dump", "pattern": r"procdump.*-ma\s+lsass"},
+                            ],
+                        },
+                    ],
+                }
+            }
+        }
+    )
+
+
+def test_a_large_clean_job_never_runs_the_budget_dry(monkeypatch):
+    """Ordinary matching is charged to the budget too, so a flat budget went dry on large
+    jobs and silently skipped every check after that point. Each event now pays its own way."""
+    import app.threat_detection as td
+
+    monkeypatch.setattr(td, "REGEX_TOTAL_SECONDS", 0.001)
+    monkeypatch.setattr(td, "_cached", _slow_and_lsass_config(td))
+    acc = td.ThreatAccumulator()
+    for i in range(2000):
+        acc.add([{"CommandLine": f"C:\\Windows\\system32\\svchost.exe -k netsvcs -p -s Schedule {i} " + "x" * 2000}])
+    acc.add([{"CommandLine": "procdump.exe -accepteula -ma lsass.exe out.dmp"}])
+    result = acc.result()
+    assert not result.get("incomplete")
+    assert result["categories"]["test"]["indicators"][0]["tag"] == "LSASS_DUMP"
+
+
+def test_crafted_events_cannot_switch_off_the_checks_after_them(monkeypatch):
+    """A few pathological events at the top of a log used to spend the whole budget, so a
+    real dump later in the same job went unflagged. They still cost bounded time and the
+    result says it is incomplete, but the events after them are checked."""
+    import time
+
+    import app.threat_detection as td
+
+    monkeypatch.setattr(td, "REGEX_TOTAL_SECONDS", 0.05)
+    monkeypatch.setattr(td, "_cached", _slow_and_lsass_config(td))
+    acc = td.ThreatAccumulator()
+    crafted = "a" * 30000 + "!"
+    started = time.monotonic()
+    for _ in range(20):
+        acc.add([{"CommandLine": crafted}])
+    spent = time.monotonic() - started
+    acc.add([{"CommandLine": "procdump.exe -accepteula -ma lsass.exe out.dmp"}])
+    result = acc.result()
+
+    allowance = td.REGEX_TOTAL_SECONDS + 20 * (td.REGEX_EVENT_SECONDS + td.REGEX_KB_SECONDS * len(crafted) / 1024)
+    assert spent < allowance + 0.5
+    assert result["incomplete"] and result["regex_timeouts"] > 0
+    assert [i["tag"] for i in result["categories"]["test"]["indicators"]] == ["LSASS_DUMP"]
+
+
+def test_the_allowance_has_an_absolute_ceiling(monkeypatch):
+    """Per-event credit must not turn a large crafted upload into unbounded worker time."""
+    import time
+
+    import app.threat_detection as td
+
+    monkeypatch.setattr(td, "REGEX_TOTAL_SECONDS", 0.05)
+    monkeypatch.setattr(td, "REGEX_MAX_SECONDS", 0.15)
+    monkeypatch.setattr(td, "_cached", _slow_and_lsass_config(td))
+    acc = td.ThreatAccumulator()
+    started = time.monotonic()
+    for _ in range(100):
+        acc.add([{"CommandLine": "a" * 30000 + "!"}])
+    spent = time.monotonic() - started
+    result = acc.result()
+
+    assert acc._regex_budget.granted == pytest.approx(td.REGEX_MAX_SECONDS)
+    assert spent < td.REGEX_MAX_SECONDS + 0.5
+    assert result["incomplete"] and result["regex_budget_exhausted"]

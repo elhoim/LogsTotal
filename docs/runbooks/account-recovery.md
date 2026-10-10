@@ -27,18 +27,18 @@ Changing your email keeps you signed in; use the new address at your next login.
 
 If another administrator can sign in, ask them to reset your password on `/admin/users`.
 
-Otherwise, create a recovery administrator with a **new email address**. The bootstrap skips accounts that already exist, so changing `ADMIN_PASSWORD` in `.env` does not reset any password.
+Otherwise, create a recovery administrator with a **new email address**. The bootstrap skips accounts that already exist, so changing `ADMIN_PASSWORD` in `.env` does not reset any password. On a normal start it also creates nobody once any administrator exists, so changing `ADMIN_EMAIL` does not add one either; the command below asks for a recovery administrator explicitly.
 
 On a Docker deployment, run this on the deployment host, from the install directory, while the stack is running. It prompts for the new address and password:
 
 ```bash
-docker compose run --rm --no-deps web python3 -c 'import asyncio, getpass, os; os.environ["ADMIN_EMAIL"] = input("New recovery admin email: "); os.environ["ADMIN_PASSWORD"] = getpass.getpass("New password: "); import init_db; asyncio.run(init_db.main())'
+docker compose run --rm --no-deps web python3 -c 'import asyncio, getpass, os; os.environ["ADMIN_EMAIL"] = input("New recovery admin email: "); os.environ["ADMIN_PASSWORD"] = getpass.getpass("New password: "); import init_db; asyncio.run(init_db.main(recovery=True))'
 ```
 
 On a development checkout, run the same command through PDM:
 
 ```bash
-pdm run python3 -c 'import asyncio, getpass, os; os.environ["ADMIN_EMAIL"] = input("New recovery admin email: "); os.environ["ADMIN_PASSWORD"] = getpass.getpass("New password: "); import init_db; asyncio.run(init_db.main())'
+pdm run python3 -c 'import asyncio, getpass, os; os.environ["ADMIN_EMAIL"] = input("New recovery admin email: "); os.environ["ADMIN_PASSWORD"] = getpass.getpass("New password: "); import init_db; asyncio.run(init_db.main(recovery=True))'
 ```
 
 Expect `Admin user created:` followed by the new address. Sign in with it, reset the original account's password on `/admin/users`, sign in as the original account, and delete the recovery account. If the command says the address already exists, choose another one: it has not changed that account's password. The command also reloads the shipped workflows and rules, as every web service start does.

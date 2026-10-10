@@ -96,7 +96,7 @@ Every setting, grouped by concern. A default applies when the key is absent from
 | Variable | Description |
 |----------|-------------|
 | `SECRET_KEY` | JWT signing key (**must change** from the default — the app refuses to start with it) |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | The first admin account, created when the database is initialised (the web container does this on start). Refused: `changeme123` and other common defaults, passwords under 8 characters, and passwords containing the email |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | The first admin account, created on a start that finds no administrator (the web container checks on every start). Once one exists, changing either creates or changes nothing — see [Account recovery](runbooks/account-recovery.md#lockout-recovery). Refused: `changeme123` and other common defaults, passwords under 8 characters, and passwords containing the email |
 | `DATABASE_URL` | Async database URL (default: SQLite; `postgresql+asyncpg://...` for PostgreSQL) |
 | `SYNC_DATABASE_URL` | Sync database URL for workers and migrations — derived from `DATABASE_URL` when unset |
 | `AUTO_MIGRATE` | Run database migrations automatically when the web process starts (default: `true`; set `false` only while investigating a failed migration — see [Database migrations](runbooks/migrations.md)) |
@@ -179,7 +179,7 @@ Used with `COMPOSE_PROFILES=proxy`. The four `PROXY_TLS` modes, what each needs,
 | `REQUEST_LOG_ENABLED` | Log one line per request with status and duration (default: `false`). `/static/` and `/health` are never logged; the request id is set either way |
 | `ACTIVITY_RETENTION_DAYS` | How long activity-log rows are kept, in days; `0` keeps forever (default: `90`). Capture itself is the `activity_log_enabled` site setting, not an environment variable |
 | `BACKGROUND_TASK_RETENTION_DAYS` | How long finished background-task rows are kept, in days; `0` keeps forever (default: `30`). Only finished rows are pruned |
-| `UPLOAD_RETENTION_DAYS` | Age at which an uploaded log file **and its jobs** are deleted, in days (default: `0` = never). Off by default because this removes submitted evidence, not derived data. `/admin/storage` shows the effective value; the sweep schedule is in [Storage and retention](runbooks/storage.md) |
+| `UPLOAD_RETENTION_DAYS` | Age at which an uploaded log file **and its jobs** are deleted, in days (default: `0` = never). The age counts from the newer of the upload and the most recent job on that file, so re-uploading identical content as a new job or resubmitting it keeps the file. Off by default because this removes submitted evidence, not derived data. `/admin/storage` shows the effective value; the sweep schedule is in [Storage and retention](runbooks/storage.md) |
 | `UPLOAD_DIR` | Local upload directory (default: `uploads`) |
 | `MAX_UPLOAD_SIZE_MB` | Maximum upload file size in MB (default: `500`) |
 | `UPLOAD_RATE_LIMIT_PER_MINUTE` | Anonymous uploads per client IP per minute (default: 30; `0` = unlimited) |
