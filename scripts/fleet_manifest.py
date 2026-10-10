@@ -77,6 +77,10 @@ OPTION_KEYS = (
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _REMOTE_DIR = re.compile(r"/[A-Za-z0-9._/-]+")
 _HOST = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*(?:@[A-Za-z0-9_][A-Za-z0-9._-]*)?")
+#: A host's recorded address. set_intent copies DEPLOY_CP_ADDRESS into the control plane's,
+#: so it takes that option's alphabet — an IPv6 literal included — or a fleet deployed with
+#: one writes a record its own tooling then refuses. Still nothing a shell reads as syntax.
+_ADDRESS = re.compile(r"[A-Za-z0-9_.:\[\]-]+")
 _OPTION_PATTERNS = {
     "vpn": r"(?:none|wireconf|tailscale|wireguard|auto)",
     "vpn_port": r"[0-9]{1,5}",
@@ -114,7 +118,7 @@ def validate_record(manifest: dict[str, Any]) -> None:
         if not isinstance(host, dict) or not isinstance(host.get("entry"), str) or not _HOST.fullmatch(host["entry"]):
             raise ValueError("invalid fleet host")
         address = host.get("address", "")
-        if address and (not isinstance(address, str) or not _HOST.fullmatch(address)):
+        if address and (not isinstance(address, str) or not _ADDRESS.fullmatch(address)):
             raise ValueError("invalid fleet host address")
     cp = manifest.get("control_plane", "")
     if cp and (not isinstance(cp, str) or not _HOST.fullmatch(cp)):

@@ -434,6 +434,37 @@ class TestTheControlPlaneRecognisesItself:
         assert run({"FLEET_MANIFEST": str(install / "fleet" / "manifest.json")}) == "root@cp.example.com,root@w1.example.com"
 
 
+@pytest.mark.parametrize("address", ["fd00::5", "[fd00::5]", "10.0.0.5"])
+def test_a_record_with_an_ipv6_control_plane_address_validates(tmp_path: Path, address: str):
+    """set_intent copies DEPLOY_CP_ADDRESS into the control plane's host address, so the
+    validator has to accept whatever that option does, or the record refuses itself."""
+    m = _intent(tmp_path / "manifest.json", hosts="root@cp.example.com,root@w1.example.com", cp_address=address)
+    assert m["hosts"][0]["address"] == address
+    fm.validate_record(m)
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+def test_an_invalid_own_record_is_ignored_with_a_warning(tmp_path: Path):
+    """The control plane's own record is consulted last and assigned under `set -e`: one
+    that fails validation must degrade to "" and say why, not stop the caller silently."""
+    install = tmp_path / "install"
+    (install / "fleet").mkdir(parents=True)
+    m = _intent(install / "fleet" / "manifest.json", hosts="root@cp.example.com,root@w1.example.com")
+    m["options"]["vpn"] = "nonsense;id"
+    fm.save(str(install / "fleet" / "manifest.json"), m)
+    env = {k: v for k, v in os.environ.items() if k != "FLEET_MANIFEST"}
+    out = subprocess.run(
+        ["bash", "-c", f'set -e; . "{COMMON_SH}"; hosts=$(fleet_hosts "{install}"); printf "[%s]" "$hosts"'],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        env=env,
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout == "[]"
+    assert "did not validate" in out.stderr
+
+
 class TestARunNeverDamagesTheRecord:
     """Three ways a routine run could corrupt the record it is updating.
 
