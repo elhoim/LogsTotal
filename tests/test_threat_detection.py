@@ -455,3 +455,24 @@ def test_crafted_events_cannot_switch_off_the_checks_after_them(monkeypatch):
     assert spent < allowance + 0.5
     assert result["incomplete"] and result["regex_timeouts"] > 0
     assert [i["tag"] for i in result["categories"]["test"]["indicators"]] == ["LSASS_DUMP"]
+
+
+def test_the_allowance_has_an_absolute_ceiling(monkeypatch):
+    """Per-event credit must not turn a large crafted upload into unbounded worker time."""
+    import time
+
+    import app.threat_detection as td
+
+    monkeypatch.setattr(td, "REGEX_TOTAL_SECONDS", 0.05)
+    monkeypatch.setattr(td, "REGEX_MAX_SECONDS", 0.15)
+    monkeypatch.setattr(td, "_cached", _slow_and_lsass_config(td))
+    acc = td.ThreatAccumulator()
+    started = time.monotonic()
+    for _ in range(100):
+        acc.add([{"CommandLine": "a" * 30000 + "!"}])
+    spent = time.monotonic() - started
+    result = acc.result()
+
+    assert acc._regex_budget.granted == pytest.approx(td.REGEX_MAX_SECONDS)
+    assert spent < td.REGEX_MAX_SECONDS + 0.5
+    assert result["incomplete"] and result["regex_budget_exhausted"]
