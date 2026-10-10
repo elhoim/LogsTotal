@@ -96,7 +96,7 @@ Every setting, grouped by concern. A default applies when the key is absent from
 | Variable | Description |
 |----------|-------------|
 | `SECRET_KEY` | JWT signing key (**must change** from the default — the app refuses to start with it) |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | The first admin account, created when the database is initialised (the web container does this on start). Refused: `changeme123` and other common defaults, passwords under 8 characters, and passwords containing the email |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | The first admin account, created on a start that finds no administrator (the web container checks on every start). Once one exists, changing either creates or changes nothing — see [Account recovery](runbooks/account-recovery.md#lockout-recovery). Refused: `changeme123` and other common defaults, passwords under 8 characters, and passwords containing the email |
 | `DATABASE_URL` | Async database URL (default: SQLite; `postgresql+asyncpg://...` for PostgreSQL) |
 | `SYNC_DATABASE_URL` | Sync database URL for workers and migrations — derived from `DATABASE_URL` when unset |
 | `AUTO_MIGRATE` | Run database migrations automatically when the web process starts (default: `true`; set `false` only while investigating a failed migration — see [Database migrations](runbooks/migrations.md)) |
