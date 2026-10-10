@@ -92,7 +92,7 @@ def test_existing_tool_results_are_identical(name, tmp_path):
 )
 async def test_persisted_totals_and_export_retain_reference_results(name, total, groups, severity, async_db, test_client, tmp_path):
     from app.job_results import rollup_job_counts
-    from app.models import AnalysisJob, LogFile, LogType, TaskResult, WorkflowDef
+    from app.models import AnalysisJob, LogFile, LogType, TaskResult, TaskStatus, WorkflowDef
     from app.tools.base import ToolOutput
     from app.workers.tasks import _persist_tool_result
 
@@ -108,7 +108,7 @@ async def test_persisted_totals_and_export_retain_reference_results(name, total,
     job = AnalysisJob(file_id=source.id, workflow_id=workflow.id)
     async_db.add(job)
     await async_db.flush()
-    task = TaskResult(job_id=job.id, tool_name=case["tool"])
+    task = TaskResult(job_id=job.id, tool_name=case["tool"], status=TaskStatus.RUNNING)
     async_db.add(task)
     await async_db.flush()
     adapter = get_adapter(case["tool"], {"rules_path": str(rules), "max_finding_details": 1})
