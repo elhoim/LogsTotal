@@ -59,7 +59,7 @@ Commands run on the deployment host, from the install directory, unless the fix 
 
 | Symptom | Likely cause | First action |
 |---------|--------------|--------------|
-| `/health` returns 503 with `redis: error` | Redis is down or unreachable | `docker compose logs redis`; `docker compose exec redis redis-cli ping` (add `-a` with the password if `REDIS_PASSWORD` is set) |
+| `/health` returns 503 with `redis: error` | Redis is down or unreachable | `docker compose logs redis`; `docker compose exec redis redis-cli ping` (with `REDIS_PASSWORD` set: `docker compose exec redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping'`) |
 | `/health` returns 503 with `database: error` | The database is down, or `DATABASE_URL` is wrong | `docker compose logs web`, and `docker compose logs postgres` for the bundled PostgreSQL; check the database settings in `.env` |
 | `/health` returns 503 with `storage: error` | The S3 endpoint is unreachable, the bucket is missing or the keys are wrong — or the local `uploads/` directory is not writable | `./logstotal doctor:docker` shows the storage check with its detail; check `STORAGE_BACKEND` and the `S3_*` settings |
 | New jobs are queued but never start | No live worker, every host paused, or the worker crashed | On `/admin/workers`, check that a worker is listed and not every host is at `-1`; restart the worker |
