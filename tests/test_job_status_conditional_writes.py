@@ -147,6 +147,49 @@ def test_a_run_that_loses_the_claim_leaves_the_live_workers_keys(sync_db, job_id
     assert cancel_flag_value(job) != "job:0:not-this-one"
 
 
+def test_a_duplicate_that_sees_a_live_cancel_leaves_the_live_workers_keys(sync_db, job_id, monkeypatch, fake_redis):
+    """The cancelled-before-pickup branch reads the same flag a running job's worker is
+    watching. A duplicate message loses the PENDING -> CANCELLED write there, and must then
+    leave the heartbeat and the flag to the worker that owns them."""
+    import app.workers.tasks as tasks_mod
+
+    calls = _adapter_calls(monkeypatch)
+    job = sync_db.get(AnalysisJob, job_id)
+    flag = cancel_flag_value(job)
+    _commit_elsewhere(sync_db, job_id, JobStatus.RUNNING)
+    fake_redis.set(f"{HEARTBEAT_PREFIX}{job_id}", "other-worker")
+    fake_redis.set(f"{CANCEL_PREFIX}{job_id}", flag)
+    # The duplicate read the row while it was still PENDING; the claim lands before its write.
+    monkeypatch.setattr(tasks_mod, "_cancel_requested", lambda jid, identity: True)
+
+    tasks_mod.run_analysis.call_local(job_id)
+
+    assert calls == []
+    assert fake_redis.get(f"{HEARTBEAT_PREFIX}{job_id}") == "other-worker"
+    assert fake_redis.get(f"{CANCEL_PREFIX}{job_id}") == flag
+    sync_db.expire_all()
+    assert sync_db.get(AnalysisJob, job_id).status == JobStatus.RUNNING
+
+
+def test_fail_job_leaves_the_task_rows_of_a_job_it_does_not_own(sync_db, job_id):
+    """A run that failed before claiming may only settle a PENDING job. When the job is
+    RUNNING on another worker, that worker's unfinished rows are not this run's to fail."""
+    import app.workers.tasks as tasks_mod
+
+    job = sync_db.get(AnalysisJob, job_id)
+    sync_db.add(TaskResult(job_id=job_id, tool_name="zircolite", status=TaskStatus.RUNNING))
+    sync_db.commit()
+    _commit_elsewhere(sync_db, job_id, JobStatus.RUNNING)
+
+    tasks_mod._fail_job(sync_db, job, "duplicate failed early", expected=(JobStatus.PENDING,))
+
+    sync_db.expire_all()
+    assert sync_db.get(AnalysisJob, job_id).status == JobStatus.RUNNING
+    row = sync_db.execute(select(TaskResult).where(TaskResult.job_id == job_id)).scalar_one()
+    assert row.status == TaskStatus.RUNNING
+    assert row.error_message is None
+
+
 def test_fail_job_does_not_overwrite_a_terminal_status(sync_db, job_id):
     import app.workers.tasks as tasks_mod
 

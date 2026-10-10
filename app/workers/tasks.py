@@ -706,10 +706,15 @@ def run_analysis(job_id: int):  # noqa: C901 — known debt: the job lifecycle (
             return
         cw.identity = cancel_flag_value(job)
         if _cancel_requested(job_id, cw.identity):
-            owns_job_keys = True  # the flag has served its purpose; the finally clears it
-            _set_job_status(db, job, JobStatus.CANCELLED, expected=(JobStatus.PENDING,), error_message=CANCEL_MSG_USER, finished_at=utc_now_naive())
+            # The flag has served its purpose only for the run that settles the job. A
+            # duplicate message for a job another worker is running sees the same live flag,
+            # loses this write, and must leave that worker's heartbeat and flag in place.
+            owns_job_keys = _set_job_status(db, job, JobStatus.CANCELLED, expected=(JobStatus.PENDING,), error_message=CANCEL_MSG_USER, finished_at=utc_now_naive())
             db.commit()
-            _log.info("Job %d cancelled before pickup — dropping", job_id)
+            if owns_job_keys:
+                _log.info("Job %d cancelled before pickup — dropping", job_id)
+            else:
+                _log.info("Job %d was claimed or finalized elsewhere before pickup — dropping", job_id)
             return
 
         # The claim. Conditional, because the row read above can be stale by now: the
@@ -1120,10 +1125,13 @@ def _set_task_status(db, task_result_id: int, status: TaskStatus, *, expected: t
 
 
 def _fail_job(db, job: AnalysisJob, message: str, expected: tuple[JobStatus, ...] = (JobStatus.RUNNING,)):
-    _sweep_unfinished_task_results(db, job.id, TaskStatus.FAILED, message)
-    _rollup_job_counts(db, job)
-    # Never over a terminal status, and never over a job another run has claimed.
-    if not _set_job_status(db, job, JobStatus.FAILED, expected=expected, error_message=message, finished_at=utc_now_naive()):
+    # Never over a terminal status, and never over a job another run has claimed. The task
+    # rows follow the job: a run that loses this write may be a duplicate whose job another
+    # worker is still running, and sweeping first would fail that worker's live rows.
+    if _set_job_status(db, job, JobStatus.FAILED, expected=expected, error_message=message, finished_at=utc_now_naive()):
+        _sweep_unfinished_task_results(db, job.id, TaskStatus.FAILED, message)
+        _rollup_job_counts(db, job)
+    else:
         _log.info("Job %d is already %s — not marking it failed", job.id, enum_val(job.status))
     db.commit()
 
