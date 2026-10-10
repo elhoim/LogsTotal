@@ -9,6 +9,8 @@ backup step, migration ordering, and rollback for each deployment path.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-10
+
 A security release. It fixes the nineteen vulnerabilities reported privately against 1.0.0,
 listed under **Security**, and adds the RSigma engine and an account menu. Read **Upgrade
 notes** before upgrading: everyone is signed out once, and two API behaviours change.
@@ -197,5 +199,6 @@ side, with the context an analyst needs to act on it.
   directory.
 - `./logstotal deploy:env-scaffold` generates the Garage secrets.
 
-[Unreleased]: https://github.com/wagga40/LogsTotal/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/wagga40/LogsTotal/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/wagga40/LogsTotal/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/wagga40/LogsTotal/releases/tag/v1.0.0
