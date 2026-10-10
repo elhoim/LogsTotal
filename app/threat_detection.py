@@ -224,6 +224,14 @@ _MatchResult = dict[str, tuple[int, str, str]]
 # Full fields and the shipped patterns remain intact; a timeout is reported as partial.
 REGEX_MATCH_SECONDS = 0.02
 REGEX_TOTAL_SECONDS = 5.0
+# Each event adds to the budget in proportion to the text it carries. A flat budget ran dry
+# on ordinary work (about 33,000 Sysmon events), after which every later event went
+# unchecked, so a few crafted events at the top of a log could hide everything below them.
+# Measured ordinary cost is ~0.1 ms per event plus ~0.21 ms per KB of field text; the
+# allowance leaves headroom over both, and crafted input still costs time linear in the
+# upload rather than in the backtracking.
+REGEX_EVENT_SECONDS = 0.001
+REGEX_KB_SECONDS = 0.0005
 
 
 class _RegexBudget:
@@ -231,6 +239,11 @@ class _RegexBudget:
         self.remaining = REGEX_TOTAL_SECONDS
         self.timeouts = 0
         self.exhausted = False
+
+    def credit(self, scan_dicts: list[dict]) -> None:
+        """Add one event's allowance. ``exhausted`` stays set: an earlier event went unchecked."""
+        size = sum(len(v) for d in scan_dicts for v in d.values() if isinstance(v, str))
+        self.remaining += REGEX_EVENT_SECONDS + REGEX_KB_SECONDS * size / 1024
 
     def search(self, pattern, value):
         if self.remaining <= 0:
@@ -453,6 +466,7 @@ class ThreatAccumulator:
         """Fold one event's scan dicts in."""
         if not self._config:
             return
+        self._regex_budget.credit(scan_dicts)
         for cat_key, checks in self._cat_checks:
             event_hits: set[tuple[str, str, str]] = set()
 
