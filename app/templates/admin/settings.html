@@ -62,7 +62,7 @@
     {{ toggle("show_alert_timeline", "Events timeline", site_settings.show_alert_timeline,
               "The zoomable per-alert view below the histogram. Normalised to UTC and stored in the database, so it survives raw-output cleanup — unlike the histogram and the process tree.") }}
     {{ toggle("show_entities", "Entities", site_settings.show_entities,
-              "The Intel pages and the entities panel on job detail. Off hides PII-bearing observables.") }}
+              "The entities panel on job detail. Entities are still extracted and listed on the Intel pages, which only members and admins can open.") }}
     {{ toggle("show_threat_detection", "Threat detection", site_settings.show_threat_detection,
               "The heuristic panel — LOLBINs, encoding, privilege escalation.") }}
     {{ toggle("show_process_tree", "Process tree", site_settings.show_process_tree,
