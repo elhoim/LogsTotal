@@ -36,10 +36,16 @@ hand with `draft`:
 ```bash
 gh workflow disable release.yml
 git push --atomic <github-remote> <branch> refs/tags/vX.Y.Z
+gh run list --event push --limit 5      # wait until the tag's Docs run is listed
 gh workflow enable release.yml
 gh workflow run release.yml --ref <branch> -f tag=vX.Y.Z -f draft=true
 gh release edit vX.Y.Z --draft=false    # later, to publish
 ```
+
+Wait for the push's runs before re-enabling. GitHub reads a push asynchronously, and for
+1.1.0 a workflow re-enabled one second after the push still started a publishing run from
+the tag. If one appears anyway, `gh run cancel` it: it publishes only after its CI gate,
+which takes several minutes.
 
 The draft carries the same CI-built archive and checksum. `upgrade` does not offer it until
 it is published, because a draft's assets are not publicly downloadable.
